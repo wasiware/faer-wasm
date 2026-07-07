@@ -1,0 +1,25 @@
+[package]
+name = "consumer"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+faer = { path = "../faer-rs/faer", default-features = false, features = ["linalg"] }
+pulp = { path = "../pulp/pulp", default-features = false, features = ["relaxed-simd"] }
+
+[features]
+lu = []
+full = []
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[patch.crates-io]
+pulp = { path = "../pulp/pulp" }

@@ -1,0 +1,48 @@
+diff --git a/faer/src/operator/eigen/mod.rs b/faer/src/operator/eigen/mod.rs
+index bd253bf..e911f71 100644
+--- a/faer/src/operator/eigen/mod.rs
++++ b/faer/src/operator/eigen/mod.rs
+@@ -316,7 +316,7 @@ fn partial_schur_real_imp<T: RealField>(
+ 				.for_each(|unzip!(y, x): Zip!(&mut T, &T)| *y = f * x);
+ 		} else {
+ 			let n0 = n as u32;
+-			let n1 = (n >> 32) as u32;
++			let n1 = ((n as u64) >> 32) as u32;
+ 			let n = from_f64::<T>(n0 as f64) + from_f64::<T>(n1 as f64);
+ 			let f = n.sqrt().recip();
+ 			zip!(V.rb_mut().col_mut(0)).for_each(|unzip!(y)| *y = f.copy());
+@@ -768,7 +768,7 @@ fn partial_schur_cplx_imp<T: ComplexField>(
+ 				.for_each(|unzip!(y, x): Zip!(&mut T, &T)| *y = x.mul_real(&f));
+ 		} else {
+ 			let n0 = n as u32;
+-			let n1 = (n >> 32) as u32;
++			let n1 = ((n as u64) >> 32) as u32;
+ 			let n = from_f64::<T>(n0 as f64) + from_f64::<T>(n1 as f64);
+ 			let f = n.sqrt().recip();
+ 			zip!(V.rb_mut().col_mut(0)).for_each(|unzip!(y)| *y = f.copy());
+diff --git a/faer/src/operator/self_adjoint_eigen/mod.rs b/faer/src/operator/self_adjoint_eigen/mod.rs
+index 48f4acf..3541d65 100644
+--- a/faer/src/operator/self_adjoint_eigen/mod.rs
++++ b/faer/src/operator/self_adjoint_eigen/mod.rs
+@@ -105,7 +105,7 @@ pub fn partial_self_adjoint_eigen_imp<T: ComplexField>(
+ 				.for_each(|unzip!(y, x): Zip!(&mut T, &T)| *y = x.mul_real(f));
+ 		} else {
+ 			let n0 = n as u32;
+-			let n1 = (n >> 32) as u32;
++			let n1 = ((n as u64) >> 32) as u32;
+ 			let n = from_f64::<T>(n0 as f64) + from_f64::<T>(n1 as f64);
+ 			let f = n.sqrt().recip();
+ 			zip!(V.rb_mut().col_mut(0)).for_each(|unzip!(y)| *y = f.copy());
+diff --git a/faer/src/operator/svd/mod.rs b/faer/src/operator/svd/mod.rs
+index 3a6aee9..32b8c9b 100644
+--- a/faer/src/operator/svd/mod.rs
++++ b/faer/src/operator/svd/mod.rs
+@@ -156,7 +156,7 @@ pub fn partial_svd_imp<T: ComplexField>(
+ 			.for_each(|unzip!(y, x): Zip!(&mut _, &_)| *y = x.mul_real(f));
+ 	} else {
+ 		let n0 = n as u32;
+-		let n1 = (n >> 32) as u32;
++		let n1 = ((n as u64) >> 32) as u32;
+ 		let n = from_f64::<T>(n0 as f64) + from_f64::<T>(n1 as f64);
+ 		let ref f = n.sqrt().recip();
+ 		zip!(Q.rb_mut().col_mut(0)).for_each(|unzip!(y)| *y = f.copy());

@@ -1,0 +1,2 @@
+upstream faer-rs commit: 0539947ffb757a739d7e703a7d2fa0c792a909c1
+http://local_proxy@127.0.0.1:41729/git/sarah-quinones/faer-rs
