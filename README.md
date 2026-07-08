@@ -10,7 +10,9 @@ Empirical basis in docs/.
 
 ## Contents
 
-- `ROADMAP.md` — the phased plan (Phase 0: the 32-bit fix + wasm CI).
+- `ROADMAP.md` — the phased plan. Phases 0–1 (the carried fix, CI gate,
+  consumer recipe, size budgets) are done; next are the LAPACK-parity
+  tail and the benchmark harness.
 - `patches/0001-fix-32bit-usize-shift.patch` — the 4-line fix that makes
   faer build on wasm32 (and armv7/i686): `(n >> 32)` on 32-bit `usize` →
   `((n as u64) >> 32) as u32`, in `operator/{eigen,self_adjoint_eigen,svd}`.
@@ -40,6 +42,9 @@ root (gitignored): `faer-rs/` and `pulp/`. Commits are pinned in
     git clone https://github.com/sarah-quinones/pulp
     git -C faer-rs checkout <faer commit in patches/UPSTREAM-BASE.txt>
     git -C pulp    checkout <pulp commit in patches/UPSTREAM-BASE.txt>
-    git -C faer-rs apply ../patches/0001-fix-32bit-usize-shift.patch
-    cd smoke-test && cargo build --target wasm32-unknown-unknown --release
-    node run.mjs
+    for p in patches/*.patch; do git -C faer-rs apply "../$p"; done
+    cd smoke-test && cargo build --target wasm32-unknown-unknown --release --features full
+    node check.mjs   # exact-value + size gate; run.mjs just prints
+
+Consumer-facing build recipe (features, sizes, SIMD, determinism):
+`docs/wasm.md`.

@@ -48,9 +48,8 @@ pub extern "C" fn qr_svd_evd_probe() -> f64 {
 mod wasm_shim {
     use core::alloc::{GlobalAlloc, Layout};
 
-    // dlmalloc-free bump allocator is too crude; use a simple wee-alloc-style
-    // approach: leak-only bump allocator over wasm memory.grow. Fine for a
-    // smoke test.
+    // leak-only bump allocator over memory.grow, so the module needs no
+    // imports at all; fine for a smoke test
     struct Bump;
 
     extern "C" {
@@ -92,14 +91,4 @@ mod wasm_shim {
     fn panic(_: &core::panic::PanicInfo) -> ! {
         core::arch::wasm32::unreachable()
     }
-
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-pub fn native_check() {
-    let t = matmul_trace();
-    assert!((t - {
-        // reference computed independently below in test
-        t
-    }).abs() < 1e-12);
 }

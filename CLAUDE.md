@@ -32,14 +32,15 @@ the LinearAlgebra coverage matrix).
 
 ```sh
 cd smoke-test
-cargo build --target wasm32-unknown-unknown --release
-node run.mjs   # matmul / LU / QR / SVD / EVD, hand-verified values
+cargo build --target wasm32-unknown-unknown --release --features full
+node check.mjs   # exact values (matmul / LU / QR / SVD / EVD) + size budget
 ```
 
 Results were bit-identical between native x86-64 and wasm in the 2026-07
-verification — treat any cross-target difference as a bug, not noise. When
-touching kernels or features, re-measure `.wasm` sizes and compare against
-the table in `docs/` (51 KiB matmul → ~396 KiB full suite).
+verification — treat any cross-target difference as a bug, not noise. CI
+(`.github/workflows/wasm-gate.yml`) runs the same gate across all four
+build variants with size budgets from `smoke-test/size-budgets.json`;
+current sizes are tabulated in `docs/wasm.md` §3.
 
 ## Upstream policy
 

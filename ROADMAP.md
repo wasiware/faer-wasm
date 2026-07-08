@@ -1,6 +1,6 @@
 # faer-on-wasm roadmap
 
-A phased plan for the faer clone, scoped **language-agnostically**: every item
+A phased plan for the carried faer, scoped **language-agnostically**: every item
 is something any wasm-targeting (or LAPACK-replacing) consumer of faer would
 plausibly want — nothing Julia- or Ruju-specific lives here. The consumer-side
 integration (the LBT/BLAS-ABI shim that presents `dgemm_64_`-style symbols)
@@ -97,10 +97,9 @@ Not needed for any current consumer; keep as a recorded non-goal until it is.
 The BLAS/LAPACK **ABI shim** (Fortran symbol names, column-major leading
 dimensions, transpose/uplo flags, ILP64 widths, `info` codes, workspace-query
 protocol) is consumer-side. Upstream already ships **`faer-ffi`** (a C-ABI
-crate) — the natural foundation; anything *generic* added to `faer-ffi`
-(routine coverage, C-ABI surface) upstreams here, while the Fortran-flavored
-LBT layer stays with the consumer (for Ruju: inside its runtime, registered
-in its internal ccall symbol table).
+crate) — the natural foundation to build against or extend in companion
+code, while the Fortran-flavored LBT layer stays with the consumer (for
+Ruju: inside its runtime, registered in its internal ccall symbol table).
 
 ## Cadence
 

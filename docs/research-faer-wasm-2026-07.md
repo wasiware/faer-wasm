@@ -1,3 +1,10 @@
+> **Archival research report (2026-07-07).** The measurements and code
+> findings below remain the project's evidence base. The *proposals* do
+> not govern anymore: §8's upstream contribution plan was prepared and
+> then **shelved by decision on 2026-07-08** — nothing is submitted
+> upstream. Current strategy lives in `ROADMAP.md` and `CLAUDE.md`
+> (thin carry, selective release adoption).
+
 # faer-on-wasm verification research
 
 Empirical verification of the plan to use **faer** (pure-Rust linear algebra) as the
