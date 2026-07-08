@@ -1,9 +1,12 @@
 # faer-wasm
 
-Staging ground for making [faer](https://codeberg.org/sarah-quinones/faer-rs)
-a first-class wasm32 citizen. **Thin-fork discipline**: nothing lives here
-long-term — every change's destination is an upstream PR (Codeberg;
-GitHub is a mirror). See ROADMAP.md; empirical basis in docs/.
+Makes [faer](https://github.com/sarah-quinones/faer-rs) usable as a
+first-class wasm32 dependency. **Thin-carry discipline**: we vendor the
+smallest possible patch set, keep it clean against a pinned upstream base,
+re-verify on every faer release, and drop patches the moment upstream
+doesn't need them. Nothing is submitted upstream (by choice — see
+ROADMAP.md); new capability is built alongside faer, not inside it.
+Empirical basis in docs/.
 
 ## Contents
 
@@ -16,10 +19,10 @@ GitHub is a mirror). See ROADMAP.md; empirical basis in docs/.
   `wasm32-unknown-unknown` (with the patch applied to a local faer checkout)
   and runs matmul / LU / QR / SVD / EVD under node, verified bit-identical
   to native x86-64.
-- `upstream/` — the prepared Phase 0 contribution: `git am`-able patches
-  (the 32-bit fix + regression tests, and a wasm32 CI job with a node
-  smoke test) plus the PR description to file on Codeberg
-  (`PR-32bit-fix-and-wasm-ci.md`).
+- `upstream/` — **archived, shelved**: a complete contribution (fix +
+  regression tests + wasm CI job, as `git am`-able patches with PR/issue
+  text) that was prepared and then deliberately not submitted. Kept
+  because the patches double as our own regression tests; don't extend it.
 - `docs/research-faer-wasm-2026-07.md` — the verification research:
   measured sizes (51 KiB matmul → ~396 KiB full suite), pulp simd128 status
   (already complete upstream), LinearAlgebra coverage matrix.

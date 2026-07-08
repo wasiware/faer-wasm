@@ -1,3 +1,6 @@
+> **SHELVED (2026-07-08, Andy's decision): do not submit this.** Kept only
+> because the patches double as our regression tests. See ROADMAP.md.
+
 # PR to file on Codeberg: 32-bit fix + wasm32 CI
 
 Target: https://codeberg.org/sarah-quinones/faer-rs (canonical home; GitHub

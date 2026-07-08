@@ -17,46 +17,46 @@ pulp already ships a complete wasm backend (`Simd128` + `RelaxedSimd` with
 real `f64x2.mul` / `relaxed_madd` in the output. The `rayon` feature does not
 build on wasm (`atomic-wait` has no port); `Par::Seq` is first-class.
 
-**Prime directive: keep the fork thin.** Every phase's endpoint is an
-upstream PR (faer's home is Codeberg; GitHub is a mirror). Zero long-lived
-divergence is the success criterion — precedent (faer-rs#222) shows real
-wasm users and a responsive maintainer.
+**Prime directive: keep the carry thin.** Strategy settled 2026-07-08:
+nothing is submitted upstream (Andy's decision — do not revisit
+unprompted). We vendor the minimum patch set against a pinned upstream
+base, re-verify on every faer release, and drop patches the moment a
+release doesn't need them. New capability is built *alongside* faer
+(companion crates / consumer shim over public APIs), not inside it.
 
-## Phase 0 — Land the enabler (days-scale)
+## Phase 0 — Carry the enabler ✅ (maintenance mode)
 
-- [ ] The **4-line 32-bit fix**: `(n >> 32)` → `((n as u64) >> 32) as u32` in
-      `operator/{eigen, self_adjoint_eigen, svd}`. Benefits wasm32, armv7,
-      i686 — a genuine 32-bit-correctness fix, not a wasm accommodation.
-      Submit upstream with a regression test on a 32-bit target.
-      *(prepared 2026-07-07 — patch + zero-`v0` regression tests in
-      `upstream/0001-*.patch`; awaiting Codeberg filing)*
-- [ ] A **wasm32 CI job**: build `--target wasm32-unknown-unknown` with
-      `default-features = false, features = ["linalg"]` + a headless node
-      smoke test (LU solve, hand-verified values), so wasm can't silently
-      regress again.
-      *(prepared 2026-07-07 — `.woodpecker/wasm.yaml` + `faer-wasm-test`
-      crate in `upstream/0002-*.patch`; awaiting Codeberg filing)*
-- [ ] Open the conversation with the maintainer: wasm as a supported tier,
-      referencing #222's existing demand.
+- [x] The **4-line 32-bit fix**: `(n >> 32)` → `((n as u64) >> 32) as u32` in
+      `operator/{eigen, self_adjoint_eigen, svd}`. Carried in
+      `patches/0001-*.patch`; zero-`v0` regression tests exist in the
+      archived `upstream/0001-*.patch` (they double as our own tests).
+- [x] Verification gate green (2026-07-07): wasm build + node smoke test
+      reproduce the reference values exactly, bit-identical to native.
+- [ ] **CI in this repo** (GitHub Actions): clone → pin → patch → build
+      `wasm32-unknown-unknown` → node smoke test, so a faer bump or patch
+      drift can't silently break us. (Replaces the shelved upstream CI job.)
+- Recurring: on each faer release, re-pin `patches/UPSTREAM-BASE.txt`,
+  re-apply, re-run the gate. If a release builds on 32-bit without our
+  patch, delete the patch and note it here.
 
 ## Phase 1 — Wasm consumer ergonomics
 
-- [ ] A documented **wasm recipe** (README section or `docs/wasm.md`):
-      feature set, `panic = "abort"`, `opt-level = "z"` + fat LTO, expected
-      sizes per decomposition (publish the measured 51 KiB → 396 KiB table),
-      the `no_std` path, and the determinism note (bit-identical to native —
-      worth advertising as a feature).
-- [ ] **Relaxed-SIMD passthrough**: consumers can already reach pulp's
-      `RelaxedSimd` via feature unification (verified); either document that
-      route or add an explicit faer feature that forwards to it. FMA via
+- [ ] A documented **wasm recipe** (`docs/wasm.md` in this repo): feature
+      set, `panic = "abort"`, `opt-level = "z"` + fat LTO, expected sizes
+      per decomposition (the measured 51 KiB → 396 KiB table), the `no_std`
+      path, and the determinism note (bit-identical to native).
+- [ ] **Relaxed-SIMD route documented**: consumers reach pulp's
+      `RelaxedSimd` via feature unification (verified working). FMA via
       `relaxed_madd` is the single biggest wasm perf lever (+~10% size).
-- [ ] **Size regression tracking** in CI: the per-decomposition wasm sizes as
-      a checked budget, so dependency creep is caught at PR time.
+- [ ] **Size regression tracking** in this repo's CI: the per-decomposition
+      wasm sizes as a checked budget, so dependency creep is caught early.
 
 ## Phase 2 — Coverage growth (the LAPACK-parity tail)
 
-Prioritized by what a LAPACK-replacing consumer hits first; each item lands
-with accuracy tests against LAPACK reference values. Verified-missing today:
+Prioritized by what a LAPACK-replacing consumer hits first; each item is
+built **alongside faer** (a companion crate or the consumer's shim, over
+faer's public low-level modules) with accuracy tests against LAPACK
+reference values. Verified-missing today:
 
 - [ ] **Schur decomposition** (`gees`-equivalent) + **eigenvalue reordering**
       (`trexc`/`trsen`) — the largest gap; unlocks matrix functions
@@ -99,6 +99,7 @@ in its internal ccall symbol table).
 
 ## Cadence
 
-Track upstream releases; rebase the clone rather than diverge. A phase is
-"done" when its PRs are merged upstream and the clone carries nothing — the
-roadmap's end state is that this repo is unnecessary.
+Track upstream releases: re-pin, re-apply `patches/`, re-run the
+verification gate. The carry stays minimal — if a faer release builds on
+32-bit targets without our patch, the patch is deleted. A phase is "done"
+when its capability is available to consumers with the gate green.

@@ -1,16 +1,20 @@
 # Instructions for Claude
 
-This repo is the staging ground for making **faer** (pure-Rust linear
-algebra) a first-class `wasm32` citizen. It exists to serve a consumer
-(Ruju, a Rust reimplementation of Julia for WebAssembly), but everything
-here is scoped **language-agnostically** — work only on things any
-wasm-targeting consumer of faer would want.
+This repo makes **faer** (pure-Rust linear algebra) usable as a first-class
+`wasm32` dependency. It exists to serve a consumer (Ruju, a Rust
+reimplementation of Julia for WebAssembly), but everything here is scoped
+**language-agnostically** — work only on things any wasm-targeting consumer
+of faer would want.
 
-**Prime directive — thin fork.** Every change's destination is an upstream
-PR (faer's home is Codeberg; GitHub is a mirror). The repo's success
-criterion is carrying *nothing*: when a phase's PRs are merged upstream,
-delete the corresponding material here. Never let a long-lived divergence
-accumulate.
+**Prime directive — thin carry.** Andy decided (2026-07-08) NOT to submit
+anything upstream — do not prepare upstream PRs, issues, or contribution
+material, and do not ask him to file anything. Instead we *carry* the
+minimum: vendor the smallest possible patch set in `patches/`, keep it
+`git am`-clean against the pinned base, and re-verify on every faer
+release. If upstream ever fixes 32-bit builds independently, drop the
+patch. New capability (Schur, Sylvester, …) is built **alongside** faer —
+in companion crates or the consumer's shim over faer's public API — never
+as patches to faer itself unless there is no other way.
 
 Start by reading `README.md`, then `ROADMAP.md` (the phased plan — work the
 lowest unfinished phase), then `docs/research-faer-wasm-2026-07.md` (the
@@ -37,13 +41,16 @@ verification — treat any cross-target difference as a bug, not noise. When
 touching kernels or features, re-measure `.wasm` sizes and compare against
 the table in `docs/` (51 KiB matmul → ~396 KiB full suite).
 
-## Upstream contributions
+## Upstream policy
 
-Prepare everything in-repo: the branch on the local `faer-rs/` clone, the
-commit with a regression test, and the PR description as a markdown file
-under `upstream/`. **The human files the PR on Codeberg** — sessions here
-have GitHub access only. Reference faer-rs#222 (existing wasm demand) when
-relevant.
+**Shelved by decision, not oversight.** A complete Phase 0 contribution
+(fix + regression tests + wasm CI job) was prepared and archived under
+`upstream/`; Andy chose not to submit it. Leave it archived, don't extend
+it, and don't revisit the decision unless he raises it. Tracking duty
+instead: on each faer release, re-pin `patches/UPSTREAM-BASE.txt`,
+re-apply `patches/`, re-run the verification gate; if a release builds on
+32-bit targets without our patch, delete the patch and note it in
+ROADMAP.md.
 
 ## Commits
 

@@ -1,3 +1,6 @@
+> **SHELVED (2026-07-08, Andy's decision): do not submit this.** Kept only
+> because the patches double as our regression tests. See ROADMAP.md.
+
 # GitHub issue to file — pure copy-paste, no fork, no Codeberg
 
 Where: https://github.com/sarah-quinones/faer-rs/issues/new
