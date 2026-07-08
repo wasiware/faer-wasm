@@ -46,11 +46,16 @@ the table in `docs/` (51 KiB matmul → ~396 KiB full suite).
 **Shelved by decision, not oversight.** A complete Phase 0 contribution
 (fix + regression tests + wasm CI job) was prepared and archived under
 `upstream/`; Andy chose not to submit it. Leave it archived, don't extend
-it, and don't revisit the decision unless he raises it. Tracking duty
-instead: on each faer release, re-pin `patches/UPSTREAM-BASE.txt`,
-re-apply `patches/`, re-run the verification gate; if a release builds on
-32-bit targets without our patch, delete the patch and note it in
-ROADMAP.md.
+it, and don't revisit the decision unless he raises it.
+
+**Release policy (Andy, 2026-07-08): upstream is a resource, not an
+obligation.** Evaluate each faer release; adopt it (re-pin, re-apply
+`patches/`, re-run the gate) only when it advances our cause. Slight
+accommodations to upstream changes are fine. If upstream's direction
+deviates from our needs, do NOT follow it — stay on the pinned base; the
+pin means nothing upstream can break us without our consent. If an
+adopted release builds on 32-bit without our patch, delete the patch and
+note it in ROADMAP.md.
 
 ## Commits
 

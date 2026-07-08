@@ -35,8 +35,10 @@ release doesn't need them. New capability is built *alongside* faer
 - [ ] **CI in this repo** (GitHub Actions): clone → pin → patch → build
       `wasm32-unknown-unknown` → node smoke test, so a faer bump or patch
       drift can't silently break us. (Replaces the shelved upstream CI job.)
-- Recurring: on each faer release, re-pin `patches/UPSTREAM-BASE.txt`,
-  re-apply, re-run the gate. If a release builds on 32-bit without our
+- Recurring: **evaluate** each faer release — adopt (re-pin, re-apply,
+  re-run the gate) only when it advances us; slight accommodations to
+  upstream changes are fine; if upstream deviates from our needs, stay on
+  the pinned base. If an adopted release builds on 32-bit without our
   patch, delete the patch and note it here.
 
 ## Phase 1 — Wasm consumer ergonomics
@@ -99,7 +101,9 @@ in its internal ccall symbol table).
 
 ## Cadence
 
-Track upstream releases: re-pin, re-apply `patches/`, re-run the
-verification gate. The carry stays minimal — if a faer release builds on
-32-bit targets without our patch, the patch is deleted. A phase is "done"
-when its capability is available to consumers with the gate green.
+Upstream is a resource, not an obligation: releases are evaluated and
+adopted only when they advance us (then re-pin, re-apply `patches/`,
+re-run the gate); when upstream deviates from our needs, we stay pinned.
+The carry stays minimal — if an adopted release builds on 32-bit targets
+without our patch, the patch is deleted. A phase is "done" when its
+capability is available to consumers with the gate green.
