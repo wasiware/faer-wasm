@@ -95,6 +95,14 @@ generalized EVD (QZ), triangular solve/inverse, full complex support.
 - [x] **Determinism guarantee** enforced in CI: native vs wasm probe
       values compared bit-for-bit on every push (plain *and* relaxed-SIMD
       builds), via `smoke-test/src/bin/native.rs` + `determinism.mjs`.
+- Open question (architect, 2026-07-08, undecided): what should external
+  benchmarks compare against? Candidates identified, none chosen —
+  (a) OpenBLAS/LAPACK single-thread (algorithmic apples-to-apples vs
+  what Julia calls; feasible in-container via numpy), (b) OpenBLAS
+  default multithread (the gap desktop users would actually feel;
+  quantifies what Phase 4 threads would buy), (c) a pure-JS matrix
+  library (brackets from below; the "why wasm at all" number). Depends
+  on audience: consumer tuning vs Ruju-vs-Julia vs wasm value pitch.
 
 ## Phase 4 — Threads, later and optional
 
