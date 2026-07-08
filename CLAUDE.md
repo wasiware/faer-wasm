@@ -16,10 +16,39 @@ patch. New capability (Schur, Sylvester, …) is built **alongside** faer —
 in companion crates or the consumer's shim over faer's public API — never
 as patches to faer itself unless there is no other way.
 
-Start by reading `README.md`, then `ROADMAP.md` (the phased plan — work the
-lowest unfinished phase), then `docs/research-faer-wasm-2026-07.md` (the
+Start by reading `README.md`, then `ROADMAP.md` (the phased plan — the
+architect picks which phase to work; see the contract below), then
+`docs/research-faer-wasm-2026-07.md` (the
 empirical evidence behind the plan: measured sizes, pulp simd128 status,
 the LinearAlgebra coverage matrix).
+
+## Working contract (adopted 2026-07-08; modeled on Lua2D's AGENTS.md)
+
+**Roles.** Andy is the **architect**: he decides *what* and *why* — scope,
+priorities, trade-offs (e.g. nothing goes upstream; releases adopted on
+our terms). A session is the **engineer**: it proposes *how*, executes
+after agreement, and must not cut the architect out of decisions.
+
+**Every pass, three steps.** (1) Report current state honestly,
+uncertainties and failures included — the ROADMAP and the status artifact
+are the medium. (2) The architect picks the next milestone; the engineer
+may propose. (3) Agree the plan, then execute.
+
+**Deviation routing.** Discoveries mid-milestone: unrelated → record in
+ROADMAP and move on; blocking the milestone (or a small measurable win on
+its path) → handle now; architectural → stop and ask the architect.
+
+**Claim grading.** Every claim in README/docs carries evidence graded on
+two independent axes: **strength** (stated < built < observed < tested <
+proven) and **durability** (by-hand < scripted < CI-enforced <
+cross-checked). Never grade a claim above its evidence, on either axis.
+The evidence grid in `README.md` is the ledger — update it whenever a
+claim is added or its evidence changes tier.
+
+**Phase close.** Every phase ends with a truth-seeking **doc pass** —
+docs checked against evidence, the opposite orientation from goal-seeking
+code review. (The 2026-07-08 sweep is the model: it caught a tautological
+test and six stale claims.)
 
 ## Working setup
 

@@ -119,4 +119,6 @@ adopted only when they advance us (then re-pin, re-apply `patches/`,
 re-run the gate); when upstream deviates from our needs, we stay pinned.
 The carry stays minimal — if an adopted release builds on 32-bit targets
 without our patch, the patch is deleted. A phase is "done" when its
-capability is available to consumers with the gate green.
+capability is available to consumers with the gate green **and** it has
+had its closing doc pass (truth-seeking: docs vs evidence — see the
+working contract in CLAUDE.md, incl. the evidence grid in README.md).

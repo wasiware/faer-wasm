@@ -36,6 +36,29 @@ Empirical basis in docs/.
   measured sizes (51 KiB matmul → ~396 KiB full suite), pulp simd128 status
   (already complete upstream), LinearAlgebra coverage matrix.
 
+## Evidence grid
+
+Per the working contract (CLAUDE.md): claims are graded on **strength**
+(stated < built < observed < tested < proven) and **durability**
+(by-hand < scripted < CI-enforced < cross-checked), and never above
+their evidence.
+
+| claim | strength | durability | evidence |
+| - | - | - | - |
+| faer + carried patch builds for wasm32 (`linalg`, `linalg,std`) | tested | CI-enforced | wasm gate, every push |
+| patches apply cleanly on the pinned base | tested | CI-enforced | gate does clone → pin → apply |
+| full dense suite runs under node, exact hand-verified values | tested | CI-enforced | `check.mjs`, 4 build variants |
+| native ↔ wasm bit-identical, incl. relaxed-SIMD build | tested | CI-enforced | `determinism.mjs` (3 probes spanning matmul/LU/QR/SVD/EVD — not all inputs) |
+| `.wasm` sizes 59→447 KB, within budgets | tested | CI-enforced | `size-budgets.json` |
+| relaxed-SIMD emits real FMA (`relaxed_madd`) | observed | by-hand | 2026-07 disassembly counts |
+| `rayon` cannot build on wasm32 | observed | by-hand | build probe at the pin |
+| perf: matmul 1.9× native; opt-level z→3 ≈ 1.75×; relaxed-SIMD ≈ +11% | observed | scripted | `bench/`, min-of-2 reps, shared box |
+| tuning: unblocked kernels win ≤ n=256 (LU 1.25–1.5× native, QR ≈ 0.9× native-default) | observed | scripted | `bench/tune.mjs` sweep |
+| shelved upstream patches recreate the branch byte-identically | observed | by-hand | `git am` round-trip, 2026-07-08 |
+| SVD/EVD wasm overhead is untuned (~3.3×+) | observed | scripted | bench tables |
+| blocked paths must win beyond some n | stated | — | untested past n=256 |
+| runs in real browsers (only node/V8 exercised) | stated | — | browser run never performed |
+
 ## Quick start
 
 The smoke test path-depends on **both** upstream clones sitting in the repo
