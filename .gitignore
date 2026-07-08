@@ -4,3 +4,6 @@ node_modules/
 /faer-rs/
 /pulp/
 /smoke-test/*.wasm
+/smoke-test/native-bits.txt
+/bench/*.wasm
+/bench/*.jsonl

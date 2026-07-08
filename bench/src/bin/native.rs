@@ -1,0 +1,44 @@
+// Native side of the wasm-vs-native benchmark. Same ops, same sizes, same
+// adaptive-iteration logic as bench.mjs; emits JSON lines:
+//   {"target":"native-o3","op":"matmul","n":128,"ns":123456.7}
+use std::time::Instant;
+
+fn time_op(f: extern "C" fn() -> f64, n: usize) -> f64 {
+    let mut sink = 0.0f64;
+    sink += f(); // warmup + compile
+    let t0 = Instant::now();
+    sink += f();
+    let per = t0.elapsed().as_secs_f64().max(1e-9);
+    // ~150ms target, capped (mirrors bench.mjs, incl. its wasm leak cap)
+    let leak_cap = (250e6 / (4.0 * 8.0 * (n * n) as f64)).floor() as usize;
+    let iters = ((0.15 / per).ceil() as usize).clamp(3, 500.min(leak_cap.max(3)));
+    let t0 = Instant::now();
+    for _ in 0..iters {
+        sink += f();
+    }
+    let ns = t0.elapsed().as_secs_f64() * 1e9 / iters as f64;
+    assert!(sink.is_finite());
+    ns
+}
+
+fn main() {
+    let label = std::env::args().nth(1).unwrap_or_else(|| "native-o3".into());
+    let ops: &[(&str, usize, extern "C" fn() -> f64)] = &[
+        ("matmul", 256, bench_harness::run_matmul),
+        ("lu_solve", 256, bench_harness::run_lu_solve),
+        ("qr", 256, bench_harness::run_qr),
+        ("svd", 256, bench_harness::run_svd),
+        ("sa_evd", 256, bench_harness::run_sa_evd),
+        ("gen_evd", 128, bench_harness::run_gen_evd),
+    ];
+    for &n in &[32usize, 64, 128, 256] {
+        bench_harness::setup(n);
+        for &(name, max_n, f) in ops {
+            if n > max_n {
+                continue;
+            }
+            let ns = time_op(f, n);
+            println!(r#"{{"target":"{label}","op":"{name}","n":{n},"ns":{ns:.1}}}"#);
+        }
+    }
+}

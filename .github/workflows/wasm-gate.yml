@@ -44,7 +44,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: smoke-test
+          workspaces: |
+            smoke-test
+            bench
 
       - uses: actions/setup-node@v4
         with:
@@ -72,3 +74,18 @@ jobs:
           for v in matmul lu full full-relaxed; do
             node check.mjs "$v.wasm" "$v"
           done
+
+      - name: Cross-target determinism (native vs wasm, bit-for-bit)
+        working-directory: smoke-test
+        run: |
+          set -eux
+          cargo run --release --features full --bin native > native-bits.txt
+          node determinism.mjs full.wasm native-bits.txt
+          node determinism.mjs full-relaxed.wasm native-bits.txt
+
+      - name: Bench harness stays buildable (build + smoke, no timing)
+        working-directory: bench
+        run: |
+          set -eux
+          cargo build --lib --profile release-z --target wasm32-unknown-unknown
+          node bench.mjs target/wasm32-unknown-unknown/release-z/bench_harness.wasm smoke --smoke

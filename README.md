@@ -28,6 +28,10 @@ Empirical basis in docs/.
 - `docs/wasm.md` — **the consumer recipe**: cargo setup, features that
   work (and `rayon`, which doesn't), the `no_std` zero-import pattern,
   sizes + budgets, the relaxed-SIMD (FMA) route, determinism guarantee.
+- `bench/` + `docs/benchmarks-2026-07.md` — the wasm-vs-native benchmark
+  harness and its first published numbers (opt-level ~1.75×, relaxed-SIMD
+  ~11%, large matmul at 1.8–1.9× native, mid-size blocking cliffs
+  identified).
 - `docs/research-faer-wasm-2026-07.md` — the verification research:
   measured sizes (51 KiB matmul → ~396 KiB full suite), pulp simd128 status
   (already complete upstream), LinearAlgebra coverage matrix.

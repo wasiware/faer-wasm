@@ -75,15 +75,23 @@ Already covered (no work): LU (partial+full pivot), LLT/pivoted-LLT/LDLT/
 Bunch-Kaufman, QR ± column pivoting, SVD, self-adjoint + general EVD,
 generalized EVD (QZ), triangular solve/inverse, full complex support.
 
-## Phase 3 — Wasm performance
+## Phase 3 — Wasm performance (started 2026-07-08)
 
-- [ ] A **benchmark harness**: wasm-vs-native per decomposition across sizes
-      (node + a browser run), tracked over time.
-- [ ] Relaxed-SIMD vs baseline simd128 deltas, published.
-- [ ] Single-thread **blocking-parameter tuning** for wasm's flat memory
-      (cache-size heuristics differ from native; measure, don't assume).
-- [ ] Formalize the **determinism guarantee** as a cross-target CI test
-      (native and wasm outputs compared bit-for-bit).
+- [x] A **benchmark harness** (`bench/`): wasm-vs-native per decomposition
+      across sizes under node, results in `docs/benchmarks-2026-07.md`;
+      CI keeps it buildable. Browser run: follow-up refinement, on real
+      hardware.
+- [x] Relaxed-SIMD vs baseline deltas, published: ~11% geomean, up to
+      ~25% on SVD/self-adjoint EVD at n≥128. Also measured: `opt-level`
+      z→3 is ~1.75× overall — the biggest knob we control.
+- [ ] Single-thread **blocking-parameter tuning** for wasm — now the
+      highest-value open item: the 2026-07 data shows mid-size
+      factorization cliffs (LU 2.8×→~20× between n=32 and n=64; QR, EVD
+      similar) pointing at native-tuned thresholds misfiring on wasm.
+      See `docs/benchmarks-2026-07.md` finding 4.
+- [x] **Determinism guarantee** enforced in CI: native vs wasm probe
+      values compared bit-for-bit on every push (plain *and* relaxed-SIMD
+      builds), via `smoke-test/src/bin/native.rs` + `determinism.mjs`.
 
 ## Phase 4 — Threads, later and optional
 
