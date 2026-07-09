@@ -237,10 +237,29 @@ pub const RECOMMENDED_CROSSOVER: usize = 128;
 /// is real but smaller than the research projection because the flat panel
 /// already runs near this box's skinny-gemm rate.
 ///
+/// Base-case width for the recursive unit-lower trsm (`trsm_rec`) — below
+/// this the trsm runs flat simd128 substitution instead of splitting into
+/// gemms. Swept on the runner 2026-07-09 (see docs/benchmarks-vs-pyodide).
+pub const RECOMMENDED_TRSM_BASE: usize = 64;
+
 /// Same output contract as [`lu_factor_in_place`] (LAPACK ipiv semantics):
 /// identical pivot sequence, factors equal up to gemm reassociation.
 /// `crossover = 0` uses [`RECOMMENDED_CROSSOVER`].
-pub fn lu_factor_recursive_in_place(mut a: MatMut<'_, f64>, piv: &mut [usize], crossover: usize) {
+pub fn lu_factor_recursive_in_place(a: MatMut<'_, f64>, piv: &mut [usize], crossover: usize) {
+	lu_factor_recursive_in_place_tuned(a, piv, crossover, RECOMMENDED_TRSM_BASE);
+}
+
+/// As [`lu_factor_recursive_in_place`] but with both tunables exposed for
+/// on-target parameter sweeps. `crossover = 0` → size-dependent default;
+/// `trsm_base = 0` → [`RECOMMENDED_TRSM_BASE`]. Consumers should call the
+/// non-`_tuned` entry; this exists so the bench harness can sweep on the
+/// runner rather than trusting dev-box numbers.
+pub fn lu_factor_recursive_in_place_tuned(
+	mut a: MatMut<'_, f64>,
+	piv: &mut [usize],
+	crossover: usize,
+	trsm_base: usize,
+) {
 	let n = a.nrows();
 	assert!(a.ncols() == n, "square only for now");
 	assert!(piv.len() >= n);
@@ -252,9 +271,10 @@ pub fn lu_factor_recursive_in_place(mut a: MatMut<'_, f64>, piv: &mut [usize], c
 	} else {
 		crossover
 	};
+	let trsm_base = if trsm_base == 0 { RECOMMENDED_TRSM_BASE } else { trsm_base };
 	let cs = a.col_stride() as usize;
 	unsafe {
-		lu_rec(a.rb_mut(), cs, 0, n, piv, crossover);
+		lu_rec(a.rb_mut(), cs, 0, n, piv, crossover, trsm_base);
 	}
 }
 
@@ -274,7 +294,15 @@ unsafe fn swap_rows(base: *mut f64, cs: usize, c0: usize, c1: usize, r1: usize, 
 /// factor the `w`-wide block starting at diagonal position `d` over rows
 /// `d..m`, columns `d..d+w`, recording absolute pivots; swaps are applied
 /// only within columns [d, d+w) — the caller handles siblings
-unsafe fn lu_rec(mut a: MatMut<'_, f64>, cs: usize, d: usize, w: usize, piv: &mut [usize], crossover: usize) {
+unsafe fn lu_rec(
+	mut a: MatMut<'_, f64>,
+	cs: usize,
+	d: usize,
+	w: usize,
+	piv: &mut [usize],
+	crossover: usize,
+	trsm_base: usize,
+) {
 	let m = a.nrows();
 	let base = a.rb_mut().as_ptr_mut();
 	if w <= crossover {
@@ -322,7 +350,7 @@ unsafe fn lu_rec(mut a: MatMut<'_, f64>, cs: usize, d: usize, w: usize, piv: &mu
 
 	let n1 = w / 2;
 	// 1. factor the left half over all rows
-	lu_rec(a.rb_mut(), cs, d, n1, piv, crossover);
+	lu_rec(a.rb_mut(), cs, d, n1, piv, crossover, trsm_base);
 	let base = a.rb_mut().as_ptr_mut();
 	// 2. apply the left half's pivots to the right-half columns
 	for k in d..d + n1 {
@@ -331,7 +359,7 @@ unsafe fn lu_rec(mut a: MatMut<'_, f64>, cs: usize, d: usize, w: usize, piv: &mu
 		}
 	}
 	// 3. A12 = L11^{-1} A12 (recursive unit-lower trsm: off-diagonal via gemm)
-	trsm_rec(a.rb_mut(), cs, d, n1, d + n1, d + w);
+	trsm_rec(a.rb_mut(), cs, d, n1, d + n1, d + w, trsm_base);
 	// 4. A22 -= A21 * A12 (rows d+n1..m)
 	{
 		let (_, a12_full, a21_full, a22_full) = a.rb_mut().split_at_mut(d + n1, d + n1);
@@ -344,7 +372,7 @@ unsafe fn lu_rec(mut a: MatMut<'_, f64>, cs: usize, d: usize, w: usize, piv: &mu
 		matmul(a22, Accum::Add, a21, a12, -1.0, Par::Seq);
 	}
 	// 5. factor the right half over rows d+n1..m
-	lu_rec(a.rb_mut(), cs, d + n1, w - n1, piv, crossover);
+	lu_rec(a.rb_mut(), cs, d + n1, w - n1, piv, crossover, trsm_base);
 	let base = a.rb_mut().as_ptr_mut();
 	// 6. apply the right half's pivots back to the left-half columns
 	for k in d + n1..d + w {
@@ -357,11 +385,8 @@ unsafe fn lu_rec(mut a: MatMut<'_, f64>, cs: usize, d: usize, w: usize, piv: &mu
 /// X = L^{-1} X where L is the unit-lower k×k block at (d, d) and X spans
 /// rows d..d+k, columns [c0, c1). Recursive: diagonal blocks by lean
 /// substitution, the off-diagonal update by gemm.
-unsafe fn trsm_rec(mut a: MatMut<'_, f64>, cs: usize, d: usize, k: usize, c0: usize, c1: usize) {
-	// 64, not 32: halving further replaces lean flat loops with gemms too
-	// small to amortize their call overhead (measured +0.3 ms at n=128)
-	const TRSM_BASE: usize = 64;
-	if k <= TRSM_BASE {
+unsafe fn trsm_rec(mut a: MatMut<'_, f64>, cs: usize, d: usize, k: usize, c0: usize, c1: usize, trsm_base: usize) {
+	if k <= trsm_base {
 		let base = a.rb_mut().as_ptr_mut();
 		let mut c = c0;
 		while c < c1 {
@@ -379,7 +404,7 @@ unsafe fn trsm_rec(mut a: MatMut<'_, f64>, cs: usize, d: usize, k: usize, c0: us
 	}
 	let k1 = k / 2;
 	// solve top: L11 X1
-	trsm_rec(a.rb_mut(), cs, d, k1, c0, c1);
+	trsm_rec(a.rb_mut(), cs, d, k1, c0, c1, trsm_base);
 	// X2 -= L21 * X1
 	{
 		let (_, x1_full, l21_full, x2_full) = a.rb_mut().split_at_mut(d + k1, d + k1);
@@ -389,5 +414,5 @@ unsafe fn trsm_rec(mut a: MatMut<'_, f64>, cs: usize, d: usize, k: usize, c0: us
 		matmul(x2, Accum::Add, l21, x1, -1.0, Par::Seq);
 	}
 	// solve bottom: L22 X2
-	trsm_rec(a.rb_mut(), cs, d + k1, k - k1, c0, c1);
+	trsm_rec(a.rb_mut(), cs, d + k1, k - k1, c0, c1, trsm_base);
 }
