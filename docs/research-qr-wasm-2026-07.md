@@ -121,6 +121,64 @@ adversarial check. Treat as directional, not settled.
   (keep the reflector, its `v^T·A`, and the update in one pass over the
   trailing columns rather than three), and it is already our win path.
 
+## What wasm-shaped QR *should be* (the positive answer)
+
+The earlier draft of this section stopped at "not recursive" — a
+constraint, not a shape. The architect (correctly) rejected that: the
+question is what the kernel *should be*, given faer's default is
+native-shaped and won't be wasm-optimal by luck. **Grading discipline
+first — this answer is a synthesis, not a research finding, and its parts
+sit at different tiers:**
+
+- The *destination* — unblocked (panel-width-1) beats faer's blocked QR
+  1.3–1.7× through n=512, and the native-shaped default losing is not
+  coincidence — is **measured** (our pyodide Runs 2–4; tested/scripted).
+- LAPACK dropping to unblocked below its own `NX` crossover is **proven**
+  (confirmed claim 3, netlib source).
+- "The compact-WY block-apply costs ~2× the flops of applying reflectors
+  singly" is **textbook** (Golub & Van Loan) — asserted from knowledge,
+  *not* a verified source in this pipeline (stated).
+- "Wasm's 2-lane SIMD shrinks the gemm advantage enough to move the
+  blocking crossover past n=512" is **my inference** — no source states
+  it, the mechanism is unmeasured (stated/hypothesis).
+- The concrete kernel below is a **proposal by analogy to the LU kernel**,
+  unbuilt (stated). It earns a higher grade only by being built and
+  beating faer's `block_size=1` path — the way `lu_factor_wk` had to beat
+  `lu_factor_tuned`.
+
+**The shape.** QR decomposes into two kernels:
+
+1. **Panel** (`dlarfg`+`dlarf`): per column, generate the reflector
+   (norm/τ/scale — one simd128 pass over the column), then update each
+   trailing panel column — `dot(v, c)` then `axpy(c, v, τ·dot)`.
+   Memory-bound, level-1/2.
+2. **Block-apply** (`dlarfb`): accumulate a panel of reflectors into
+   compact-WY `(I − V T Vᵀ)` and apply to the trailing matrix as gemms.
+   Level-3, but carries the ~2× WY flop penalty.
+
+faer's default narrows the panel and pushes everything into (2)'s gemms —
+correct on wide native SIMD. The hypothesis for why it inverts on wasm:
+the ~2× penalty in (2) is supposed to be paid back by gemm being much
+faster than the level-2 loops, and on 2-lane f64 wasm that speedup is too
+small to cover it until well past n=512. Consistent with the measured
+1.3–1.7× unblocked win, but the mechanism is unverified.
+
+So the proposed **wasm-shaped QR factorization is a fused, unblocked
+Householder panel in flat/simd128** — same design philosophy as the LU
+panel, reusing `axpy_simd128` plus a new `dot_simd128`, with `dot(v,c)`
+and `axpy(c,v,τ·dot)` fused per trailing column. **No compact-WY, no
+T-matrix, no trailing gemm** for the factorization at n ≤ 512. It is
+method-identical to LU but lands on the *opposite* structural conclusion:
+LU wanted recursion to *feed* gemm; QR wants to stay unblocked and *not*
+feed gemm. The block-apply (2) still gets built — but as a separate
+kernel whose customers are forming/applying Q and Hessenberg reduction,
+not the QR factor.
+
+The open measurement, exactly as with LU: does a hand-fused simd128
+unblocked panel beat faer's already-winning `block_size=1` path (as
+`lu_factor_wk` beat `lu_factor_tuned` by 10–30%)? Until measured, the
+kernel proposal is graded *stated*, not *tested*.
+
 ## What this means for us — the strategic read
 
 1. **QR is already won, and now we know *why*.** `qr_r_tuned`

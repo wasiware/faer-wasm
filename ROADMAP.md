@@ -220,6 +220,36 @@ alongside the wasm gate.
 - [ ] LU residual at n≥256 (0.8–0.9× vs scipy): next levers per the
       research plan are relaxed-FMA base kernels and packing the panel
       columns; diminishing returns vs the eigen flank.
+- [ ] **Tune the recursive LU on the runner** (`lu-tune.yml`): crossover
+      and trsm_base were dev-box-swept only; sweep both on the runner,
+      bake the winners, and add a `gate.mjs` guard (recursive ≤ blocked
+      at n ≥ 256) so the tuning can't silently regress. Then re-run the
+      three-way. [in flight 2026-07-09]
+
+## Considered option — WebGPU for the large-n tail (architect Q, 2026-07-09; deferred)
+
+The audience logic holds — the people who hit large-n dense linear
+algebra are the ones with a GPU — but two facts gate the decision, so
+it is recorded here rather than started:
+
+- **WebGPU is effectively f32-only.** WGSL's numeric types are
+  `i32/u32/f32/f16`; there is **no f64** in the WebGPU/WGSL spec and no
+  standard `shader-f64` feature. This repo's entire contract is f64
+  (LAPACK-parity accuracy, bit-identical native↔wasm determinism, the
+  property probes). A WebGPU path is therefore an **f32 tier** (or
+  emulated double-single, slow enough to defeat the point) — a *different
+  numerical contract*, not a faster version of what we have.
+- **GPU wins matmul, not the panels.** The factorization panels are
+  sequential and GPU-hostile; the standard hybrid (MAGMA-style) keeps the
+  panel on the CPU — i.e. it keeps *our* fast wasm-simd panel kernel. So
+  even a GPU path reuses the CPU kernel work happening now.
+
+Framing if pursued (after the CPU kernels are shaped, per the architect):
+a **separate f32, matmul-and-solve-bound project for large-n power
+users**, living *alongside* faer (not a faer patch — consistent with the
+prime directive), explicitly a distinct numerical tier rather than a
+drop-in replacement for the f64 CPU path. Not started; not re-litigated
+unless the architect raises it.
 
 ## Phase 3 — Wasm performance ✅ (2026-07-08; browser gate closed it 2026-07-09)
 
