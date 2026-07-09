@@ -33,10 +33,14 @@ jobs:
       - name: Apply carried patches
         run: |
           set -eux
-          for p in patches/*.patch; do
+          for p in patches/faer-rs/*.patch; do
             git -C faer-rs apply "../$p"
           done
+          for p in patches/pulp/*.patch; do
+            git -C pulp apply "../$p"
+          done
           git -C faer-rs diff --stat
+          git -C pulp diff --stat
 
       - uses: dtolnay/rust-toolchain@stable
         with:

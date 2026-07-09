@@ -12,10 +12,12 @@ Plain faer 0.24.4 from crates.io does **not** compile for any 32-bit
 target — `(n >> 32)` on a 32-bit `usize` is a compile error in
 `operator/{eigen,self_adjoint_eigen,svd}`; that's patch 0001 (4 lines).
 Patch 0002 (6 lines, visibility-only) exposes the Schur kernels that §8's
-companion crate drives. Set up the pinned + patched checkout first (repo
-README "Quick start"): clone `faer-rs` and `pulp`, pin to
-`patches/UPSTREAM-BASE.txt`, apply `patches/*.patch`, then depend by
-path.
+companion crate drives. Patch 0003 (4 lines, to **pulp**) fixes the
+relaxed-SIMD complex-multiply argument-order bug described in §4 — without
+it, all c64 compute is wrong under `+relaxed-simd`. Set up the pinned +
+patched checkout first (repo README "Quick start"): clone `faer-rs` and
+`pulp`, pin to `patches/UPSTREAM-BASE.txt`, apply `patches/faer-rs/*` to
+faer-rs and `patches/pulp/*` to pulp, then depend by path.
 
 ## 1. Cargo setup
 
@@ -100,17 +102,21 @@ be contributed or configured upstream.
   push and its results are bit-identical to the plain build for the
   reference probes.
 
-- **⚠ Relaxed-SIMD is real-valued-only at the current pin.** Building
-  with `+relaxed-simd` makes faer's **complex (`c64`) kernels produce
-  grossly wrong results** — found 2026-07-08 by the Schur gate: the c64
-  Hessenberg reduction has O(1) backward error (‖A − QHQᴴ‖² ≈ 186 on a
-  unit-scale 4×4), and even faer's public `.eigenvalues()` on a complex
-  input returns garbage (eigenvalue sum off trace by ~3.6). Real `f64`
-  paths and c64 *matmul* are unaffected; the plain `+simd128` build is
-  correct for everything. Until this is root-caused (upstream faer/pulp
-  at our pin), use relaxed-SIMD only for real-valued workloads. CI
-  asserts the broken state on every push (`check.mjs` canary), so an
-  upstream fix will trip the gate and retire this caveat.
+- **⚠ Upstream pulp bug, fixed by carried patch 0003.** As shipped at
+  our pin, `+relaxed-simd` makes pulp's **complex kernels produce grossly
+  wrong results** — found 2026-07-08 by the Schur gate (c64 Hessenberg
+  backward error ‖·‖² ≈ 186; even faer's public `.eigenvalues()` on
+  complex input returned garbage), then isolated stage by stage: c64
+  matmul exact, Hessenberg wrong → pulp's wasm `RelaxedSimd` impl of
+  `mul_add_e_c32s/c64s` and `mul_e_c32s/c64s` passes NEON
+  **accumulator-first** FMA arguments (`vfmaq(c,a,b) = c + a·b`, the
+  convention of the aarch64 backend this code was ported from) to the
+  **accumulator-last** `relaxed_madd(a,b,c) = a·b + c`, computing
+  `(c·b_sign + yx)·aa + xy` instead of `c + b_sign·yx + aa·xy`. The
+  4-line fix is carried as `patches/pulp/0003`; with it applied, both
+  Schur probes pass identically on plain and relaxed builds, and CI
+  requires that on every push. If a future pulp release fixes this
+  upstream, drop the patch.
 
 ## 5. Determinism — scope it carefully
 
@@ -147,9 +153,10 @@ On every push/PR: fetch both upstreams at the pinned commits → apply
 four variants → run each under node with exact value checks and size
 budgets → cross-target determinism (bit-for-bit). If a faer re-pin or a
 dependency bump breaks the build, changes a result bit, or bloats a
-binary past budget, the gate fails. The full-relaxed variant also runs
-the c64 canary: it *asserts* the known-broken c64×relaxed-simd state
-(§4), so an upstream fix fails loudly instead of going unnoticed.
+binary past budget, the gate fails. `schur_probe_cplx == 3` is required
+on both full variants — on full-relaxed it doubles as the regression
+guard for the carried pulp fix (§4): a re-pin that drops the patch while
+upstream is still broken fails immediately.
 
 ## 7. Blocking parameters on wasm (measured 2026-07-08)
 
@@ -203,12 +210,11 @@ let m = real_schur_select(t.as_mut(), Some(z.as_mut()), &select)?;
 
 In-place, allocation-free variants (`real_schur_in_place` +
 `real_schur_scratch`, ditto complex) take a `MemStack`. Requires
-`patches/0002-expose-schur-kernels.patch` on the pinned faer checkout —
+`patches/faer-rs/0002-expose-schur-kernels.patch` on the pinned faer checkout —
 a 6-line visibility-only patch (no behavior change), dropped the moment
 upstream exposes the kernels. Accuracy is tested in CI
 (`schur/tests/accuracy.rs`): backward error ‖A − ZTZᵀ‖ ~1e-15,
 orthogonality, quasi-triangular structure, eigenvalue agreement with
 faer's EVD, and reorder invariants, at sizes through n=150 (covering
-both the unblocked and the blocked/AED paths). Reminder from §4: the
-c64 driver is correct on plain simd128 but broken under relaxed-SIMD at
-this pin.
+both the unblocked and the blocked/AED paths). Its gate found (and
+patch 0003 fixed) the c64×relaxed-SIMD bug in §4.

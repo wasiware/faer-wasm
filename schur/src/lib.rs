@@ -8,7 +8,7 @@
 //!
 //! Everything is built over faer's public modules (`hessenberg`,
 //! `evd::schur::{real_schur, complex_schur}`); the latter two are public only
-//! with `patches/0002-expose-schur-kernels.patch` applied (visibility-only,
+//! with `patches/faer-rs/0002-expose-schur-kernels.patch` applied (visibility-only,
 //! no behavior change). No faer code is duplicated here — this crate is the
 //! driver (Hessenberg → Z accumulation → multishift QR) plus the
 //! LAPACK-flavored reordering loops.

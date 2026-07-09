@@ -145,12 +145,14 @@ pub extern "C" fn schur_probe() -> f64 {
 }
 
 // Complex (c64) Schur, scored the same way: 3 property checks, reference
-// value 3. Kept as a SEPARATE export because at the current pin the whole
-// c64 pipeline (faer's own `.eigenvalues()` on a complex input included)
-// produces grossly wrong results when built with `+relaxed-simd` — real
-// paths are unaffected. The gate asserts correctness (== 3) on the plain
-// build and asserts the KNOWN-BROKEN state (!= 3) on the relaxed build, so
-// an upstream fix trips CI and tells us to drop the caveat in docs/wasm.md.
+// value 3. Kept as a SEPARATE export because it doubles as the regression
+// guard for patches/pulp/0003: pulp's wasm RelaxedSimd backend shipped its
+// complex mul_add_e/mul_e kernels with transposed FMA arguments (NEON
+// accumulator-first order passed to accumulator-last relaxed_madd), which
+// made every c64 computation past matmul grossly wrong under
+// `+relaxed-simd` — including faer's own `.eigenvalues()` on complex input.
+// Found + root-caused + fixed 2026-07-08; this probe failing on a re-pin
+// means the pulp patch was dropped while upstream is still broken.
 #[cfg(feature = "full")]
 #[no_mangle]
 pub extern "C" fn schur_probe_cplx() -> f64 {

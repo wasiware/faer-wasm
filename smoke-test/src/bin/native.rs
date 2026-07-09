@@ -9,7 +9,8 @@ fn main() {
         consumer::qr_svd_evd_probe().to_bits()
     );
     println!("schur_probe={:016x}", consumer::schur_probe().to_bits());
-    // schur_probe_cplx is intentionally NOT in the determinism list: the
-    // full-relaxed build is known-broken for c64 at this pin (check.mjs
-    // canary), so a native-vs-relaxed comparison would always fail.
+    println!(
+        "schur_probe_cplx={:016x}",
+        consumer::schur_probe_cplx().to_bits()
+    );
 }

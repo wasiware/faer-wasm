@@ -28,7 +28,7 @@ release doesn't need them. New capability is built *alongside* faer
 
 - [x] The **4-line 32-bit fix**: `(n >> 32)` → `((n as u64) >> 32) as u32` in
       `operator/{eigen, self_adjoint_eigen, svd}`. Carried in
-      `patches/0001-*.patch`; zero-`v0` regression tests exist in the
+      `patches/faer-rs/0001-*.patch`; zero-`v0` regression tests exist in the
       archived `upstream/0001-*.patch` (they double as our own tests).
 - [x] Verification gate green (2026-07-07): wasm build + node smoke test
       reproduce the reference values exactly, bit-identical to native.
@@ -66,7 +66,7 @@ faer's public low-level modules) with accuracy tests. Status:
       **eigenvalue reordering** (`trexc`/`trsen`-shaped) — landed
       2026-07-08 as the `schur/` companion crate (`faer-schur`), driving
       faer's own internal kernels through
-      `patches/0002-expose-schur-kernels.patch` (6 visibility-only
+      `patches/faer-rs/0002-expose-schur-kernels.patch` (6 visibility-only
       lines; engineer's call, architect can veto: the alternative was
       porting ~500 lines of swap/QR-iteration internals into the
       companion crate). Accuracy CI-tested (backward error ~1e-15,
@@ -78,16 +78,20 @@ faer's public low-level modules) with accuracy tests. Status:
       bit-identical across targets at 8×8 (docs/wasm.md §5) — the
       determinism claim stays scoped to the fixed probes; (c) the
       c64×relaxed-simd bug below.
-- [ ] **Root-cause the c64 × relaxed-SIMD miscomputation** (found
-      2026-07-08 by the Schur gate): with `+relaxed-simd` baked in,
-      faer's complex Hessenberg — and consequently everything complex,
-      including faer's own `.eigenvalues()` on c64 input — returns
-      grossly wrong results at the current pin. Real f64 paths and c64
-      matmul are fine. CI asserts the broken state (canary in
-      `check.mjs`), docs/wasm.md §4 carries the consumer caveat
-      (relaxed = real-only). Open: dig into faer/pulp's relaxed complex
-      kernels (carry a fix?) vs wait for an upstream release that fixes
-      it — architect input wanted on how much to invest.
+- [x] **c64 × relaxed-SIMD miscomputation: root-caused and fixed**
+      (found 2026-07-08 by the Schur gate, dug out same day on Andy's
+      call). Cause: pulp's wasm `RelaxedSimd` backend ported its complex
+      `mul_add_e`/`mul_e` kernels from the aarch64 NEON backend but kept
+      NEON's accumulator-first FMA argument order when calling the
+      accumulator-last `relaxed_madd` — four transposed-argument
+      functions (`mul_add_e_c32s/c64s`, `mul_e_c32s/c64s`), each
+      computing `(c·b)·a + x` instead of `c + b·x + a·y`-style complex
+      FMA. Everything c64 past matmul was garbage under `+relaxed-simd`
+      (faer's own `.eigenvalues()` included); f64 untouched (its `_e`
+      ops are single-instruction, no porting involved). Fix carried as
+      `patches/pulp/0003` (4 lines); `schur_probe_cplx == 3` on the
+      full-relaxed variant is the CI regression guard. Drop the patch
+      when a pulp release fixes it upstream.
 - [ ] **Sylvester solver** (`trsyl`) — pairs with Schur; next in line.
 - [ ] **LQ adapter** (thin; QR-of-transpose plumbing).
 - [ ] `geevx`-style balancing / condition-number extras.

@@ -6,7 +6,7 @@ publish = false
 
 # Companion crate to the carried faer: Schur decomposition (gees-equivalent)
 # and eigenvalue reordering (trexc/trsen-equivalent) over faer's public API.
-# Requires patches/0002-expose-schur-kernels.patch (visibility-only) on the
+# Requires patches/faer-rs/0002-expose-schur-kernels.patch (visibility-only) on the
 # pinned faer checkout at ../faer-rs.
 
 [dependencies]

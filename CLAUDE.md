@@ -54,10 +54,12 @@ test and six stale claims.)
 
 - The upstream clones live at `faer-rs/` and `pulp/` in the repo root
   (gitignored — never commit them). Pin them to the commits in
-  `patches/UPSTREAM-BASE.txt` and apply `patches/*.patch` to `faer-rs/`
-  (0001: the 4-line 32-bit fix; 0002: 6 visibility-only lines exposing
-  the Schur kernels — both behavior-neutral, both dropped when upstream
-  makes them unnecessary).
+  `patches/UPSTREAM-BASE.txt`; apply `patches/faer-rs/*.patch` to
+  `faer-rs/` (0001: the 4-line 32-bit fix; 0002: 6 visibility-only lines
+  exposing the Schur kernels) and `patches/pulp/*.patch` to `pulp/`
+  (0003: 4-line fix for the relaxed-simd complex-mul argument-order bug
+  — this one is a *correctness* fix, not behavior-neutral). All dropped
+  when upstream makes them unnecessary.
 - `schur/` is the first Phase 2 companion crate (`faer-schur`: Schur +
   eigenvalue reordering over faer's public API). Its gate:
   `cd schur && cargo test --release` (CI runs it too).
