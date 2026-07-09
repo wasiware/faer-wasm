@@ -202,3 +202,31 @@ only below the crossover. Same box, five LU implementations vs scipy:
 - Suite geomean: **0.57×** (Run 1: 0.41×) — the LU/QR wins and the
   matmul crossover pull it up; the eigen flank (0.1–0.6×) is what holds
   it down and is the queued target.
+
+## Run 5 — recursive LU tuned on the runner (2026-07-09, run 29045340390)
+
+The recursive LU's crossover/trsm_base were dev-box-swept in Run 4; the
+`lu-tune.yml` sweep re-tuned them **on the runner** (run 29044864243) and
+the corrected defaults (crossover 256, trsm_base 128 — *less* recursion,
+wider flat base cases than the dev box picked) were baked and re-raced:
+
+| n | rec (tuned) | wk (blocked) | faer tuned | scipy | rec vs scipy | Δ vs Run 4 |
+| -: | -: | -: | -: | -: | -: | -: |
+| 64 | **0.06 ms** | 0.06 | 0.07 | 0.08 | **1.5×** | = |
+| 128 | **0.34 ms** | 0.35 | 0.45 | 0.38 | **1.1×** | = |
+| 256 | **2.49 ms** | 3.26 | 3.34 | 2.43 | **1.0×** | 2.78→2.49, **scipy parity** |
+| 512 | 22.33 ms | 27.28 | 29.37 | 18.39 | 0.8× | ≈ (22.40→22.33) |
+
+- **The tuning delivered at n=256**: recursive dropped 2.78→2.49 ms and
+  reached **scipy parity** (1.0×, was 0.9×), now 24% ahead of the blocked
+  driver (the co=256 default makes n=256 pure-flat, no recursion — which
+  the runner sweep showed wins there).
+- **n=512 barely moved** (22.40→22.33, still 0.8× scipy). The runner
+  sweep predicted only ~5% at 512 and per-instance variance covers it.
+  Honest read: the LU-tuning win is real through n=256, marginal at 512.
+- **The dev box had mis-tuned toward more recursion** than the runner
+  wants — the reason the sweep moved to CI (`lu-tune.yml`) and the reason
+  the defaults are now gated (`gate.mjs`: recursive ≤ blocked ≤ faer-tuned
+  at n=256) so a re-pin or bad tune can't silently undo it.
+- Suite geomean **0.58×** (Run 4: 0.57×). Unchanged conclusion overall;
+  the eigen flank (eigvals/schur 0.3–0.4×) remains the dominant gap.

@@ -220,11 +220,13 @@ alongside the wasm gate.
 - [ ] LU residual at n≥256 (0.8–0.9× vs scipy): next levers per the
       research plan are relaxed-FMA base kernels and packing the panel
       columns; diminishing returns vs the eigen flank.
-- [ ] **Tune the recursive LU on the runner** (`lu-tune.yml`): crossover
-      and trsm_base were dev-box-swept only; sweep both on the runner,
-      bake the winners, and add a `gate.mjs` guard (recursive ≤ blocked
-      at n ≥ 256) so the tuning can't silently regress. Then re-run the
-      three-way. [in flight 2026-07-09]
+- [x] **Tuned the recursive LU on the runner** (`lu-tune.yml`, Run 5):
+      dev-box sweeps had mis-picked toward *more* recursion; the runner
+      wants crossover 256 / trsm_base 128 (wider flat base cases). Baked
+      + gated (`gate.mjs`: recursive ≤ blocked ≤ faer-tuned at n=256).
+      Result: n=256 reached **scipy parity** (2.49 ms, was 0.9×), 24%
+      over the blocked driver; n=512 unchanged (~0.8×, sweep predicted
+      only ~5% and variance covers it). Docs: benchmarks Run 5.
 
 ## Considered option — WebGPU for the large-n tail (architect Q, 2026-07-09; deferred)
 
