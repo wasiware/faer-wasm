@@ -95,3 +95,44 @@ and complex); it loses the factorizations and eigensolvers, typically
 
 Actions → "pyodide bench" → Run workflow (manual; the dev container
 blocks the Pyodide CDN, runners don't). Results: job log + artifact.
+
+## Run 2 — crossover sweep to n=512 + tuned rows (2026-07-09, run 28994239085)
+
+Same protocol, sizes extended to 512, plus tuned-parameter faer rows
+(docs/wasm.md §7 params; factor-only LU vs `scipy.linalg.lu_factor`,
+R-only QR both sides). Highlights (full table in the workflow artifact):
+
+| op | n=64 | n=128 | n=256 | n=512 |
+| - | -: | -: | -: | -: |
+| matmul | 0.7× | 4.1× | 6.1× | **21.0×** |
+| matmul_c64 | 0.5× | 1.4× | 4.0× | 4.9× |
+| **qr_r_tuned** | **1.3×** | **1.5×** | **1.7×** | **1.7×** |
+| lu_factor_tuned | 1.3× | 0.8× | 0.7× | 0.6× |
+| qr_r (default) | 0.1× | 0.1× | 0.2× | 0.4× |
+| lu_factor (default) | 0.1× | 0.1× | 0.2× | 0.2× |
+| svd | 0.2× | 0.4× | 0.5× | 0.8× |
+| qr_r_c64 | 0.2× | 0.4× | 0.8× | 1.1× |
+| eigvals | 0.5× | 0.1× | 0.4× | 0.3× |
+| schur | 0.2× | 0.6× | 0.4× | 0.3× |
+| schur_c64 | 0.4× | 1.0× | 0.7× | 0.7× |
+
+(speedup = pyodide/faer; > 1 means faer-wasm wins. Geomean over all
+rows incl. defaults: 0.52×.)
+
+What this changes:
+
+- **QR is already won — by parameters alone.** Panel-width-1 QR beats
+  scipy at every size measured, 1.3–1.7×. The "QR panel kernel rewrite"
+  collapses to a packaging problem: consumers must get these params by
+  default (the faer-schur `recommended_params` treatment), not to a
+  kernel-implementation problem.
+- **LU's residual gap is now precisely bounded**: tuned LU wins at n=64
+  and sits at 0.6–0.8× for 128–512 — the panel-kernel rewrite is chasing
+  a 1.25–1.7× residual, not the 5–10× default-path gap.
+- **Crossovers exist but are matmul-led**: matmul 21× at n=512 (numpy's
+  wasm matmul collapses at cache-unfriendly sizes), complex QR crosses
+  to 1.1×, SVD approaches parity (0.8×). Per the architect's caveat,
+  large-n-only wins are scoping data, not victory — recorded as such.
+- **Eigen-pipelines stay the weak flank at every size** (0.1–0.6×):
+  unchanged conclusion — the lahqr-class kernel work is where their gap
+  lives, queued after QR/LU per the architect's ordering.
