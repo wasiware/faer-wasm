@@ -18,30 +18,37 @@ if (!wasmPath) {
 	console.error('usage: PYODIDE_PATH=<pyodide.mjs> node pyodide-vs-faer.mjs <bench-wasm>');
 	process.exit(2);
 }
-const SIZES = [64, 128, 256];
-// [name, faer bench export, python lambda body]
+const SIZES = [64, 128, 256, 512];
+// [name, faer bench export, faer args (fixed), python lambda body]
+// The *_tuned rows use the docs/wasm.md §7 parameters — the honest current
+// best-case faer — against the closest python equivalent (factor-only vs
+// scipy lu_factor; R-only QR on both sides).
 const OPS = [
-	['matmul', 'run_matmul', 'a @ b'],
-	['lu_solve', 'run_lu_solve', 'np.linalg.solve(a, rhs)'],
-	['qr_r', 'run_qr', "np.linalg.qr(a, mode='r')"],
-	['svd', 'run_svd', 'np.linalg.svd(a)'],
-	['eigvals', 'run_gen_evd', 'np.linalg.eigvals(a)'],
-	['schur', 'run_schur', 'sla.schur(a)'],
-	['matmul_c64', 'run_matmul_c64', 'ac @ bc'],
-	['lu_solve_c64', 'run_lu_solve_c64', 'np.linalg.solve(ac, rhsc)'],
-	['qr_r_c64', 'run_qr_c64', "np.linalg.qr(ac, mode='r')"],
-	['schur_c64', 'run_schur_c64', "sla.schur(ac, output='complex')"],
+	['matmul', 'run_matmul', null, 'a @ b'],
+	['lu_solve', 'run_lu_solve', null, 'np.linalg.solve(a, rhs)'],
+	['lu_factor', 'run_lu_factor_tuned', [0, 0], 'sla.lu_factor(a)'],
+	['lu_factor_tuned', 'run_lu_factor_tuned', [1 << 30, 0], 'sla.lu_factor(a)'],
+	['qr_r', 'run_qr', null, "np.linalg.qr(a, mode='r')"],
+	['qr_r_tuned', 'run_qr_factor_tuned', [1, 1 << 30], "np.linalg.qr(a, mode='r')"],
+	['svd', 'run_svd', null, 'np.linalg.svd(a)'],
+	['eigvals', 'run_gen_evd', null, 'np.linalg.eigvals(a)'],
+	['schur', 'run_schur', null, 'sla.schur(a)'],
+	['matmul_c64', 'run_matmul_c64', null, 'ac @ bc'],
+	['lu_solve_c64', 'run_lu_solve_c64', null, 'np.linalg.solve(ac, rhsc)'],
+	['qr_r_c64', 'run_qr_c64', null, "np.linalg.qr(ac, mode='r')"],
+	['schur_c64', 'run_schur_c64', null, "sla.schur(ac, output='complex')"],
 ];
 
 // ---- faer side (same adaptive min-of-3 protocol as gate.mjs)
 const bytes = readFileSync(wasmPath);
-async function timeFaer(exportName, n) {
+async function timeFaer(exportName, n, args) {
 	let best = Infinity;
-	for (let rep = 0; rep < 3; rep++) {
+	const reps = n >= 512 ? 2 : 3; // 512-sized eig pipelines are seconds-scale
+	for (let rep = 0; rep < reps; rep++) {
 		const { instance } = await WebAssembly.instantiate(bytes, {});
 		const e = instance.exports;
 		e.setup(n);
-		const f = e[exportName];
+		const f = args ? () => e[exportName](...args) : e[exportName];
 		let sink = f();
 		let t0 = performance.now();
 		sink += f();
@@ -80,9 +87,9 @@ def setup(n):
     bc = rng.uniform(-1, 1, (n, n)) + 1j * rng.uniform(-1, 1, (n, n))
     rhsc = rng.uniform(-1, 1, (n,)) + 1j * rng.uniform(-1, 1, (n,))
 
-def bench(f):
+def bench(f, reps=3):
     best = float("inf")
-    for _ in range(3):
+    for _ in range(reps):
         f()
         t0 = time.perf_counter(); f()
         per = max(time.perf_counter() - t0, 1e-9)
@@ -103,9 +110,9 @@ assert abs(a - z @ t @ z.T).max() < 1e-12, "pyodide schur residual too large"
 const rows = [];
 for (const n of SIZES) {
 	await py.runPythonAsync(`setup(${n})`);
-	for (const [name, faerExport, pyBody] of OPS) {
+	for (const [name, faerExport, faerArgs, pyBody] of OPS) {
 		const pyNs = await py.runPythonAsync(`bench(lambda: ${pyBody})`);
-		const faerNs = await timeFaer(faerExport, n);
+		const faerNs = await timeFaer(faerExport, n, faerArgs);
 		rows.push({ op: name, n, faer_ms: faerNs / 1e6, pyodide_ms: pyNs / 1e6, speedup: pyNs / faerNs });
 		console.log(JSON.stringify({ op: name, n, faer_ns: Math.round(faerNs), pyodide_ns: Math.round(pyNs) }));
 	}
