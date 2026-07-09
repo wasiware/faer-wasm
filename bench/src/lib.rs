@@ -85,6 +85,28 @@ pub extern "C" fn run_schur_c64() -> f64 {
 
 // Schur with an explicit blocking threshold (0 = library default), for the
 // wasm crossover sweep — mirrors run_lu_factor_tuned / run_qr_factor_tuned.
+// Isolated rank-k trailing update at LU shapes: C(m-k,m-k) -= A(m-k,k)*B(k,m-k)
+#[no_mangle]
+pub extern "C" fn run_rank_update(k: usize) -> f64 {
+    use faer::linalg::matmul::matmul;
+    use faer::{Accum, Par};
+    let s = state();
+    let n = s.a.nrows();
+    let k = k.min(n / 2);
+    let mut c = s.b.to_owned();
+    let a21 = s.a.as_ref().submatrix(k, 0, n - k, k);
+    let a12 = s.a.as_ref().submatrix(0, k, k, n - k);
+    matmul(
+        c.as_mut().submatrix_mut(k, k, n - k, n - k),
+        Accum::Add,
+        a21,
+        a12,
+        -1.0,
+        Par::Seq,
+    );
+    c[(k, k)] + c[(n - 1, n - 1)]
+}
+
 // The wasm-shaped kernels (kernels/ crate): lean panels + faer-gemm bulk.
 #[no_mangle]
 pub extern "C" fn run_lu_factor_wk(nb: usize) -> f64 {

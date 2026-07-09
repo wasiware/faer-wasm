@@ -28,6 +28,7 @@ const OPS = [
 	['lu_solve', 'run_lu_solve', null, 'np.linalg.solve(a, rhs)'],
 	['lu_factor', 'run_lu_factor_tuned', [0, 0], 'sla.lu_factor(a)'],
 	['lu_factor_tuned', 'run_lu_factor_tuned', [1 << 30, 0], 'sla.lu_factor(a)'],
+	['lu_factor_wk', 'run_lu_factor_wk', [0], 'sla.lu_factor(a)'],
 	['qr_r', 'run_qr', null, "np.linalg.qr(a, mode='r')"],
 	['qr_r_tuned', 'run_qr_factor_tuned', [1, 1 << 30], "np.linalg.qr(a, mode='r')"],
 	['svd', 'run_svd', null, 'np.linalg.svd(a)'],
