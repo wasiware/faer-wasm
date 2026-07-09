@@ -136,10 +136,19 @@ correct AND efficient — before building more complex layers on it.
       unchanged); faer's own `.eigenvalues()` keeps the cliff
       (no public params) — documented in docs/wasm.md §7. Post-fix
       exponents all in [1.8, 3.2]; `--gate` mode runs per push.
-- External baseline: architect direction 2026-07-09 — compare against
-  comparable wasm stacks, **Pyodide first** (scipy.linalg.schur et al.
-  in the same V8). In progress; supersedes the parked OpenBLAS/pure-JS
-  question below.
+- [x] **External baseline: Pyodide head-to-head** (architect direction
+      2026-07-09; supersedes the parked OpenBLAS/pure-JS question
+      below). First results (`docs/benchmarks-vs-pyodide-2026-07.md`,
+      re-runnable via the manual `pyodide-bench` workflow): **honest
+      and unflattering** — geomean 0.41× at n=64–256; faer-wasm wins
+      matmul 4–5× (gemm microkernels) and loses the factorizations/
+      eigensolvers 2–10× to scipy's f2c'd reference LAPACK, which
+      compiles to leaner wasm than faer's native-shaped kernels. Open
+      follow-ups: (a) n=512/1024 crossover — LAPACK's blocked paths
+      bottom out in slow dgemm, ours in fast gemm, so large-n likely
+      flips; (b) re-run with §7-tuned calls; (c) the strategic option:
+      wasm-shaped parameters across all of faer's factorizations, the
+      way faer-schur did for Schur.
 
 ## Phase 3 — Wasm performance ✅ (2026-07-08; browser gate closed it 2026-07-09)
 

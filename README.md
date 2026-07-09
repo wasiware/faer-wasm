@@ -43,6 +43,10 @@ Empirical basis in docs/.
 - `docs/wasm.md` — **the consumer recipe**: cargo setup, features that
   work (and `rayon`, which doesn't), the `no_std` zero-import pattern,
   sizes + budgets, the relaxed-SIMD (FMA) route, determinism guarantee.
+- `docs/benchmarks-vs-pyodide-2026-07.md` — the external head-to-head:
+  faer-wasm vs Pyodide's scipy/numpy in the same V8 (manual
+  `pyodide-bench` workflow). Honest result: we win matmul big, lose the
+  factorizations at n ≤ 256; analysis + follow-ups inside.
 - `bench/` + `docs/benchmarks-2026-07.md` — the wasm-vs-native benchmark
   harness (f64 + c64 ops) and its first published numbers (opt-level
   ~1.75×, relaxed-SIMD ~11%, large matmul at 1.8–1.9× native, mid-size
@@ -80,6 +84,7 @@ their evidence.
 | no cliff-class perf regressions: op/matmul ratios (×3 band), O(n³) scaling windows, tuned-kernels-still-win guards | tested | CI-enforced | `bench/gate.mjs` vs `bench/expected-ratios.json`; bands sized to the 3–10× cliffs actually observed |
 | ops scale at their complexity class: fitted exponents in [1.8, 3.2], no step jumps > 4×(n₂/n₁)³ | tested | CI-enforced | `bench/complexity.mjs --gate` per push; full sweep tables in benchmarks doc |
 | Schur/EVD blocked path loses 2–13× on wasm ≤ n=384; `faer-schur` ships wasm-tuned defaults (`recommended_params`) | observed | scripted | threshold sweep 2026-07-09, tables in benchmarks doc; the complexity gate guards the fixed path |
+| vs Pyodide (scipy/numpy on wasm, same V8): faer wins matmul 4–5×, loses factorizations/eigensolvers 2–10×, geomean 0.41× at n ≤ 256 | observed | scripted | one Actions run 2026-07-09, `docs/benchmarks-vs-pyodide-2026-07.md`; re-runnable via manual workflow |
 
 ## Quick start
 
