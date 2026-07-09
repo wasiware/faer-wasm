@@ -187,3 +187,46 @@ harness has actually caught, so shared-runner noise can't trip them.
 The harness also gained c64 ops. Recorded ratios vs f64 matmul at n=128
 (node/V8, opt-3): c64 matmul 3.1×, c64 LU solve 4.1×, c64 QR 12.9× —
 the first complex-arithmetic overhead numbers for this stack on wasm.
+
+## Complexity verification and the Schur/EVD cliff (2026-07-09)
+
+`bench/complexity.mjs` sweeps every op across n = 64…256 and fits the
+empirical exponent p in t ≈ c·nᵖ (log-log least squares over n ≥ 96),
+plus a step-jump detector (consecutive ratio capped at 4×(n₂/n₁)³) —
+because an exponent fit cannot see a constant-factor cliff.
+
+The jump detector immediately caught one: **faer's blocked multishift/AED
+path is 2–13× slower than the unblocked `lahqr` kernel on wasm at every
+size measured**, and the default `blocking_threshold = 75` walks straight
+into it. Threshold sweep (node/V8, opt-3, min-of-2):
+
+| n | real: default | real: lahqr | ratio | complex: default | complex: lahqr | ratio |
+| -: | -: | -: | -: | -: | -: | -: |
+| 64 | 9.5 ms | 9.3 ms | 1.0× | 12.1 ms | 13.2 ms | 0.9× |
+| 96 | 202.2 ms | 15.1 ms | **13.4×** | 241.3 ms | 23.5 ms | **10.3×** |
+| 128 | 224.3 ms | 32.0 ms | 7.0× | 322.1 ms | 53.1 ms | 6.1× |
+| 192 | 243.2 ms | 102.2 ms | 2.4× | 448.9 ms | 200.5 ms | 2.2× |
+| 256 | 549.4 ms | 260.6 ms | 2.1× | 1123.6 ms | 507.5 ms | 2.2× |
+| 384 | 2489.6 ms | 726.7 ms | 3.4× | — | — | — |
+
+Resolution: `faer-schur::{real,complex}::recommended_params()` raises the
+blocking threshold on wasm32 so everything stays on `lahqr` (the
+convenience APIs use it automatically; `*_in_place` still takes explicit
+params). faer's own `.eigenvalues()` has no public params and keeps the
+cliff — on wasm, prefer `faer-schur` for spectra at n ≥ 75.
+
+Fitted exponents after the fix (all Θ(n³) in theory; LU sits low because
+its cubic constant is small and quadratic overheads still amortize):
+
+| op | p | op | p |
+| - | -: | - | -: |
+| matmul | 2.92 | matmul_c64 | 2.92 |
+| lu_solve | 1.80 | lu_solve_c64 | 1.98 |
+| qr | 2.24 | qr_c64 | 2.36 |
+| svd | 2.86 | schur | 2.89 |
+| sa_evd | 2.67 | schur_c64 | 3.13 |
+| gen_evd | (cliff-distorted; exempt, see above) | | |
+
+CI runs `complexity.mjs --gate` (n = 96/128/192, exponent window
+[1.5, 3.6] + jump caps) on every push, so a future re-pin cannot
+reintroduce a cliff or a complexity-class blowup silently.

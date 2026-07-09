@@ -12,6 +12,7 @@ name = "native"
 
 [dependencies]
 faer = { path = "../faer-rs/faer", default-features = false, features = ["linalg"] }
+faer-schur = { path = "../schur" }
 pulp = { path = "../pulp/pulp", default-features = false, features = ["relaxed-simd"] }
 
 # perf profile: the speed end of the AOT spectrum

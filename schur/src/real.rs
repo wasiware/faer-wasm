@@ -19,6 +19,24 @@ use faer::{Auto, Conj};
 
 pub use faer::linalg::evd::schur::SchurParams;
 
+/// `SchurParams` tuned for the compilation target. On `wasm32` the blocked
+/// multishift/AED path loses to the unblocked `lahqr` kernel by 2–13×
+/// through n = 384 (real) / n = 256 (complex) — measured 2026-07-09 under
+/// node/V8, tables in `docs/benchmarks-2026-07.md` — so the blocking
+/// threshold is raised to keep every size on `lahqr`. Re-sweep before
+/// relying on this beyond the measured range; the `*_in_place` APIs take
+/// explicit params for consumers who want the blocked path back. On other
+/// targets this is faer's `Auto` default, unchanged.
+pub fn recommended_params() -> SchurParams {
+	#[allow(unused_mut)]
+	let mut params: SchurParams = Auto::<f64>::auto();
+	#[cfg(target_arch = "wasm32")]
+	{
+		params.blocking_threshold = usize::MAX;
+	}
+	params
+}
+
 /// scratch space required by [`real_schur_in_place`]
 pub fn real_schur_scratch(n: usize, par: Par, params: SchurParams) -> StackReq {
 	if n <= 1 {
@@ -154,7 +172,7 @@ pub struct RealSchur {
 pub fn real_schur(a: MatRef<'_, f64>, par: Par) -> Result<RealSchur, SchurError> {
 	let n = a.nrows();
 	assert!(a.ncols() == n);
-	let params: SchurParams = Auto::<f64>::auto();
+	let params = recommended_params();
 	let mut t = a.to_owned();
 	let mut z = Mat::zeros(n, n);
 	let mut w_re = Col::zeros(n);

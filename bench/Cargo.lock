@@ -13,6 +13,7 @@ name = "bench-harness"
 version = "0.1.0"
 dependencies = [
  "faer",
+ "faer-schur",
  "pulp",
 ]
 
@@ -101,6 +102,13 @@ dependencies = [
  "num-traits",
  "pulp",
  "reborrow",
+]
+
+[[package]]
+name = "faer-schur"
+version = "0.1.0"
+dependencies = [
+ "faer",
 ]
 
 [[package]]

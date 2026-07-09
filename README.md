@@ -78,6 +78,8 @@ their evidence.
 | foundation ops (LU/QR/LLT/SVD/EVD/eigenvalues) correct at n=33 (SIMD tails) + n=96 (blocked paths), f64 AND c64 | tested | CI-enforced | `dense_f64_probe`=26 / `dense_c64_probe`=24, identical on native, node, and Chrome, all full variants |
 | runs in real browsers (headless Chrome, incl. relaxed-SIMD variant) | tested | CI-enforced | `browser-check.mjs` (raw CDP), exact values, every push |
 | no cliff-class perf regressions: op/matmul ratios (×3 band), O(n³) scaling windows, tuned-kernels-still-win guards | tested | CI-enforced | `bench/gate.mjs` vs `bench/expected-ratios.json`; bands sized to the 3–10× cliffs actually observed |
+| ops scale at their complexity class: fitted exponents in [1.8, 3.2], no step jumps > 4×(n₂/n₁)³ | tested | CI-enforced | `bench/complexity.mjs --gate` per push; full sweep tables in benchmarks doc |
+| Schur/EVD blocked path loses 2–13× on wasm ≤ n=384; `faer-schur` ships wasm-tuned defaults (`recommended_params`) | observed | scripted | threshold sweep 2026-07-09, tables in benchmarks doc; the complexity gate guards the fixed path |
 
 ## Quick start
 

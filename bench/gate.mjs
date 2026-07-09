@@ -26,7 +26,7 @@ if (!wasmPath) {
 const record = flag === '--record';
 const bytes = readFileSync(wasmPath);
 
-const RATIO_OPS = ['lu_solve', 'qr', 'svd', 'sa_evd', 'gen_evd', 'matmul_c64', 'lu_solve_c64', 'qr_c64'];
+const RATIO_OPS = ['lu_solve', 'qr', 'svd', 'sa_evd', 'gen_evd', 'schur', 'matmul_c64', 'lu_solve_c64', 'qr_c64', 'schur_c64'];
 const SCALING_OPS = ['matmul', 'lu_solve', 'qr', 'matmul_c64'];
 const BAND = 3.0;               // op/matmul drift allowed vs recorded
 const SCALE_WINDOW = [3, 26];   // op(256)/op(128) window (O(n³) ≈ 8)

@@ -66,6 +66,76 @@ pub extern "C" fn setup(n: usize) {
 }
 
 #[no_mangle]
+pub extern "C" fn run_schur() -> f64 {
+    use faer::Par;
+    let s = state();
+    let sc = faer_schur::real::real_schur(s.a.as_ref(), Par::Seq).unwrap();
+    let n = sc.t.nrows();
+    sc.t[(0, 0)] + sc.z[(n - 1, n - 1)] + sc.w_re[0]
+}
+
+#[no_mangle]
+pub extern "C" fn run_schur_c64() -> f64 {
+    use faer::Par;
+    let s = state();
+    let sc = faer_schur::complex::complex_schur(s.ac.as_ref(), Par::Seq).unwrap();
+    let n = sc.t.nrows();
+    sc.t[(0, 0)].re + sc.z[(n - 1, n - 1)].im + sc.w[0].re
+}
+
+// Schur with an explicit blocking threshold (0 = library default), for the
+// wasm crossover sweep — mirrors run_lu_factor_tuned / run_qr_factor_tuned.
+#[no_mangle]
+pub extern "C" fn run_schur_tuned(blocking_threshold: usize) -> f64 {
+    use faer::dyn_stack::{MemBuffer, MemStack};
+    use faer::{Auto, Col, Mat, Par};
+    use faer_schur::real::{real_schur_in_place, real_schur_scratch, SchurParams};
+    let s = state();
+    let n = s.a.nrows();
+    let mut params: SchurParams = Auto::<f64>::auto();
+    if blocking_threshold != 0 {
+        params.blocking_threshold = blocking_threshold;
+    }
+    let mut t = s.a.to_owned();
+    let mut z = Mat::<f64>::zeros(n, n);
+    let mut w_re = Col::<f64>::zeros(n);
+    let mut w_im = Col::<f64>::zeros(n);
+    let mut buf = MemBuffer::new(real_schur_scratch(n, Par::Seq, params));
+    let stack = MemStack::new(&mut buf);
+    real_schur_in_place(
+        t.as_mut(),
+        Some(z.as_mut()),
+        w_re.as_mut(),
+        w_im.as_mut(),
+        Par::Seq,
+        stack,
+        params,
+    )
+    .unwrap();
+    t[(0, 0)] + z[(n - 1, n - 1)] + w_re[0]
+}
+
+#[no_mangle]
+pub extern "C" fn run_schur_c64_tuned(blocking_threshold: usize) -> f64 {
+    use faer::dyn_stack::{MemBuffer, MemStack};
+    use faer::{Auto, Col, Mat, Par};
+    use faer_schur::complex::{complex_schur_in_place, complex_schur_scratch, SchurParams};
+    let s = state();
+    let n = s.ac.nrows();
+    let mut params: SchurParams = Auto::<faer::c64>::auto();
+    if blocking_threshold != 0 {
+        params.blocking_threshold = blocking_threshold;
+    }
+    let mut t = s.ac.to_owned();
+    let mut z = Mat::<faer::c64>::zeros(n, n);
+    let mut w = Col::<faer::c64>::zeros(n);
+    let mut buf = MemBuffer::new(complex_schur_scratch(n, Par::Seq, params));
+    let stack = MemStack::new(&mut buf);
+    complex_schur_in_place(t.as_mut(), Some(z.as_mut()), w.as_mut(), Par::Seq, stack, params).unwrap();
+    t[(0, 0)].re + z[(n - 1, n - 1)].im + w[0].re
+}
+
+#[no_mangle]
 pub extern "C" fn run_matmul_c64() -> f64 {
     let s = state();
     let c = &s.ac * &s.bc;

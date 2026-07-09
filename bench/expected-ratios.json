@@ -1,11 +1,13 @@
 {
 	"_comment": "op/matmul wall-time ratios at n=128, node/V8, opt-level 3 wasm build. Recorded 2026-07-09; gate.mjs allows x3 drift either way. Re-record after intentional perf changes.",
-	"lu_solve": 3.11,
-	"qr": 8.53,
-	"svd": 17.84,
-	"sa_evd": 9.2,
-	"gen_evd": 102.63,
-	"matmul_c64": 3.1,
-	"lu_solve_c64": 4.05,
-	"qr_c64": 12.9
+	"lu_solve": 3.13,
+	"qr": 8.1,
+	"svd": 17.33,
+	"sa_evd": 9.24,
+	"gen_evd": 97.18,
+	"schur": 25.14,
+	"matmul_c64": 2.9,
+	"lu_solve_c64": 3.99,
+	"qr_c64": 11.21,
+	"schur_c64": 44.08
 }

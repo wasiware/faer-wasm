@@ -125,8 +125,21 @@ correct AND efficient — before building more complex layers on it.
       probes exact in headless Chrome via raw CDP (no npm deps),
       including the relaxed-SIMD build — closes Phase 3's browser-run
       refinement; "runs in real browsers" is now CI-enforced.
-- Still open here: the external baseline (OpenBLAS 1T / NT / pure-JS —
-  the undecided Phase 3 question) now has a harness to plug into.
+- [x] **Complexity verification** (2026-07-09, second architect pass on
+      "efficiency"): `bench/complexity.mjs` fits the empirical exponent
+      p per op (log-log LSQ, n ≥ 96) and detects step jumps
+      (consecutive ratio ≤ 4×(n₂/n₁)³) — the jump detector found the
+      **Schur/EVD blocking cliff** on its first run: faer's blocked
+      multishift loses to unblocked `lahqr` by 2–13× through n=384 on
+      wasm, and the default threshold (75) hits 13× at n=96. Fixed in
+      `faer-schur::recommended_params()` (wasm-tuned defaults, native
+      unchanged); faer's own `.eigenvalues()` keeps the cliff
+      (no public params) — documented in docs/wasm.md §7. Post-fix
+      exponents all in [1.8, 3.2]; `--gate` mode runs per push.
+- External baseline: architect direction 2026-07-09 — compare against
+  comparable wasm stacks, **Pyodide first** (scipy.linalg.schur et al.
+  in the same V8). In progress; supersedes the parked OpenBLAS/pure-JS
+  question below.
 
 ## Phase 3 — Wasm performance ✅ (2026-07-08; browser gate closed it 2026-07-09)
 

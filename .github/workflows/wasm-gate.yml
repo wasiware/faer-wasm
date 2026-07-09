@@ -108,3 +108,4 @@ jobs:
           node bench.mjs target/wasm32-unknown-unknown/release-z/bench_harness.wasm smoke --smoke
           cargo build --lib --release --target wasm32-unknown-unknown
           node gate.mjs target/wasm32-unknown-unknown/release/bench_harness.wasm
+          node complexity.mjs target/wasm32-unknown-unknown/release/bench_harness.wasm --gate
