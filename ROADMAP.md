@@ -188,10 +188,33 @@ alongside the wasm gate.
       Their factorizations ride autovectorized generic C; ours ride
       hand-written simd128 gemm. Routing more flops into gemm is the
       whole game, confirmed.
-- [ ] Wasm-shaped QR panel kernel + blocked WY driver (queued next by
-      architect ordering; qr_r_tuned already wins everywhere, so this
-      plays for margin + a reusable Householder-apply block for the
-      future Hessenberg/eigen work).
+- [x] **Deep research on QR optimization**
+      (`docs/research-qr-wasm-2026-07.md`): search/fetch completed, but
+      the 3-vote verify died on a Fable-5 usage-credit exhaustion —
+      claims verified by hand on Opus 4.8 against LAPACK/OpenBLAS
+      primary source (graded proven/by-hand for structural facts,
+      observed/sourced-unverified for single-paper perf numbers). Two
+      load-bearing results: (i) Pyodide's QR is *doubly* un-optimized —
+      OpenBLAS ships **no** QR routines, so scipy runs reference-netlib
+      `dgeqrf` over generic-C BLAS, which is *why* `qr_r_tuned` already
+      wins 1.3–1.7× structurally; (ii) **recursion is the wrong move for
+      QR** (opposite of LU) — ReLAPACK excludes it, `dgeqrt3` recurses to
+      skinny gemms, both concede blocking loses at small n. The durable
+      lever is the block-apply `(I−V T Vᵀ)·C` kernel, whose real payoff
+      is Hessenberg (the eigen flank), not standalone QR.
+- [ ] **Package panel-width-1 QR as the consumer default**
+      (`recommended_qr_params()`, the `faer-schur` treatment) — the
+      cheap confirmed win; `.qr()` callers currently fall into faer's
+      native default, not the winning path. [Re-scoped from the original
+      "blocked WY driver", which the QR research *contraindicated*:
+      blocking/recursion don't beat unblocked at n ≤ 512.]
+- [ ] **Wasm-shaped block-apply kernel `(I−V T Vᵀ)·C` in
+      `faer-wasm-kernels`** — coarse-only (no recursion, no skinny-gemm
+      base case; the LU lesson), routed into faer gemm. Buys little on
+      already-won QR; built as the reusable inner loop of Hessenberg.
+- [ ] **Wasm-shaped Hessenberg reduction** (`dlahr2`-shape over the
+      block-apply above) — the actual eigen-flank lever; where the
+      2.5–3× eigvals/schur gaps live. Larger job, scope after block-apply.
 - [ ] The eigen flank (lahqr-class kernels): the remaining 2.5–3× gaps
       live here (eigvals/schur 0.3–0.4× at most sizes).
 - [ ] LU residual at n≥256 (0.8–0.9× vs scipy): next levers per the

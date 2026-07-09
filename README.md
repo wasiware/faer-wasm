@@ -88,6 +88,8 @@ their evidence.
 | `faer-wasm-kernels` LU (blocked + recursive) factors correctly: ‖PA−LU‖/solve gates, identical pivots between the two drivers, agreement with faer | tested | CI-enforced | `kernels/tests/lu.rs` across sizes 1–512 × block/crossover settings, per push |
 | recursive LU is the fastest wasm LU measured: beats scipy at n ≤ 128 (1.1–1.5×), 0.8–0.9× at 256–512; 15–18% over the blocked driver | observed | scripted | Run 4 (29023029694), same-box protocol; local crossover sweeps 2026-07-09 |
 | Pyodide's scipy links OpenBLAS 0.3.28 built as generic C (`RISCV64_GENERIC`), no arch microkernels | tested | scripted | `show_config()` printed by every `pyodide-bench` run since Run 4 |
+| Pyodide's QR is *doubly* un-optimized: OpenBLAS ships no QR routines, so scipy runs reference-netlib `dgeqrf` over generic-C BLAS — hence `qr_r_tuned` wins 1.3–1.7× structurally | proven | by-hand | `docs/research-qr-wasm-2026-07.md` (verified against LAPACK/OpenBLAS source; 3-vote panel pending credit reset) |
+| recursive QR is contraindicated on wasm (ReLAPACK excludes it; `dgeqrt3` recurses to skinny gemms) — the durable lever is the block-apply kernel for Hessenberg | proven | by-hand | `docs/research-qr-wasm-2026-07.md` |
 
 ## Quick start
 
