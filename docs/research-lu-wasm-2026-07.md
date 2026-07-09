@@ -45,16 +45,27 @@ is graded above its evidence.
   rank n/2" — **1-2**; the real dgetrf2 recursion is messier (pivot
   application interleaves, ranks vary).
 
-## Sourced-unverified (quotes extracted; adversarial votes never ran)
+## Settled since (2026-07-09, post-research)
 
-- **What we are actually racing**: Pyodide's scipy links an OpenBLAS
-  built by Emscripten with the **generic C `RISCV64_GENERIC` kernel
-  target — no arch microkernels, no Fortran, no threads**. (A second,
-  older source says numpy pre-2023 was not yet on OpenBLAS —
-  version drift, treat the current-OpenBLAS claim as more likely.)
-  Consequence if true: their dgemm is autovectorized generic C, and we
-  already beat it at every measured shape — routing more of our LU
-  into gemm is the whole game.
+- **The Pyodide BLAS claim is now TESTED, no longer unverified** —
+  `pyodide-vs-faer.mjs` prints `numpy/scipy.show_config()` on every
+  run (durability: scripted). Run 4 (29023029694) shows scipy 1.18.0
+  linked against **OpenBLAS 0.3.28, target `RISCV64_GENERIC`**
+  (`... NO_AFFINITY=1 USE_OPENMP= RISCV64_GENERIC MAX_THREADS=4`),
+  cross-compiled by Emscripten. Generic C kernels confirmed; the
+  strategic consequence (route flops into our gemm) is confirmed with
+  it.
+- **Plan item 1 executed** (`lu_factor_recursive_in_place`,
+  kernels/src/lu.rs): the projection held — 22.40 ms at n=512 on the
+  runner (projected 20–22; blocked wk driver 27.39, scipy 18.45), and
+  2.78 ms at n=256 (wk 3.26, scipy 2.44). One *constant* from the
+  theory was refuted by measurement: narrow base cases (crossover
+  8–32, trsm base 32) LOSE — skinny gemm call overhead exceeds the
+  flat-loop cost it replaces. Winning shape: crossover 128, trsm
+  base 64, flat loops alone through n=128. See
+  docs/benchmarks-vs-pyodide-2026-07.md Run 4.
+
+## Sourced-unverified (quotes extracted; adversarial votes never ran)
 - **OpenBLAS's own getrf is recursion-shaped**: first panel width =
   min(m,n)/2, rounded to the gemm microkernel width and capped by the
   gemm cache parameter, falling back to unblocked getf2 only at tiny
@@ -77,21 +88,20 @@ is graded above its evidence.
 
 ## Ranked plan for the 1.35–1.5× gap at n=256–512
 
-1. **Recursive panel (dgetrf2-shape) inside our blocked driver** — the
-   only technique that is confirmed, drop-in, and aimed at our exact
-   measured wall. Expected effect: panel axpy flops (~3 GF) become
-   trsm+gemm flops (~4.7 GF); flop accounting puts n=512 at ~20-22 ms
-   vs current 27.7 and scipy's 18.4, and it also feeds the ≤128 sizes
-   through gemm. Base-case width stays our lean simd128 kernel;
-   crossover swept per ReLAPACK practice.
+1. ~~**Recursive panel (dgetrf2-shape)**~~ — **done** (see "Settled
+   since" above): gap now 1.14×/1.21× at 256/512. Original rationale:
+   the only technique that is confirmed, drop-in, and aimed at our
+   exact measured wall; flop accounting projected n=512 at ~20-22 ms
+   vs current 27.7 and scipy's 18.4. Measured: 22.40.
 2. **Relaxed-FMA variants of the base-case kernels** (axpy →
    relaxed_madd) for the relaxed build — additive, small, rides
-   infrastructure we already gate.
-3. **Verify the Pyodide-OpenBLAS claim ourselves** (one CI run:
-   `scipy.show_config()` / `numpy.show_config()` inside Pyodide) —
-   cheap, upgrades the strategic picture from unverified to tested.
+   infrastructure we already gate. Now the top open item for LU.
+3. ~~**Verify the Pyodide-OpenBLAS claim ourselves**~~ — **done**,
+   printed by every pyodide-bench run; OpenBLAS 0.3.28
+   `RISCV64_GENERIC` confirmed.
 4. **Pivoting alternatives** — parked: unverified, semantics-changing,
-   and unnecessary if (1) closes the gap.
+   and (1) closed most of the gap; the eigen flank outranks the LU
+   residual now.
 
 ## Regenerate / extend
 

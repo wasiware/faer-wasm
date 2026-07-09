@@ -142,13 +142,61 @@ correct AND efficient — before building more complex layers on it.
       re-runnable via the manual `pyodide-bench` workflow): **honest
       and unflattering** — geomean 0.41× at n=64–256; faer-wasm wins
       matmul 4–5× (gemm microkernels) and loses the factorizations/
-      eigensolvers 2–10× to scipy's f2c'd reference LAPACK, which
+      eigensolvers 2–10× to scipy's LAPACK stack (identified in Run 4
+      as OpenBLAS-generic-C, not f2c'd reference LAPACK), which
       compiles to leaner wasm than faer's native-shaped kernels. Open
       follow-ups: (a) n=512/1024 crossover — LAPACK's blocked paths
       bottom out in slow dgemm, ours in fast gemm, so large-n likely
       flips; (b) re-run with §7-tuned calls; (c) the strategic option:
       wasm-shaped parameters across all of faer's factorizations, the
-      way faer-schur did for Schur.
+      way faer-schur did for Schur. [(a) and (b) done below — Run 2;
+      (c) superseded by the kernels crate.]
+
+## Wasm-shaped kernels (`kernels/` = `faer-wasm-kernels`) — underway (2026-07-09)
+
+Architect direction: not tuning — *implementation shaping*. Kernels
+written in the code shape wasm engines compile well (flat loops, explicit
+simd128), with the O(n³) bulk routed through faer's gemm microkernels
+(the one faer component that already beats Pyodide everywhere). LU first,
+then QR, then the eigen flank; correctness gated in CI (`kernels/tests`)
+alongside the wasm gate.
+
+- [x] **Pyodide Run 2 — crossover sweep to n=512 + tuned rows**: tuned
+      QR already beats scipy 1.3–1.7× at *every* size (a packaging
+      problem now, not a kernel problem); tuned LU bounded at 0.6–1.3×;
+      matmul 21× at n=512. Large-n-only wins are scoping data, not
+      victory (architect's caveat).
+- [x] **Blocked LU with lean simd128 panel** (`kernels/src/lu.rs`,
+      Run 3): fastest faer LU at every size; **first faer LU to beat
+      scipy** (1.5× at n=64, 1.1× at 128); 0.7× at 256–512.
+- [x] **Deep research on LU optimization**
+      (`docs/research-lu-wasm-2026-07.md`): claims graded
+      confirmed/refuted/unverified; recursive (Toledo/dgetrf2) panel
+      confirmed as the canonical fix for our measured panel wall.
+- [x] **Recursive LU** (`lu_factor_recursive_in_place`, Run 4): the
+      research's narrow-crossover theory *refuted by measurement*
+      (skinny gemms lose to flat loops; crossover 128 + TRSM base 64
+      won the sweep). On the runner: 2.78 ms at n=256 / 22.40 ms at
+      n=512 — 15–18% over the blocked wk driver, moving scipy's lead
+      to 0.9×/0.8× (was 0.7×/0.7×). Suite geomean now 0.57×
+      (was 0.41× at Run 1). Projection from the research (20–22 ms)
+      essentially held. Identical-pivot cross-check vs the blocked
+      driver is CI-gated.
+- [x] **Pyodide BLAS identity settled** (Run 4 prints
+      `scipy.show_config()`): OpenBLAS 0.3.28 built with the generic C
+      `RISCV64_GENERIC` target — no arch microkernels, no threads.
+      Their factorizations ride autovectorized generic C; ours ride
+      hand-written simd128 gemm. Routing more flops into gemm is the
+      whole game, confirmed.
+- [ ] Wasm-shaped QR panel kernel + blocked WY driver (queued next by
+      architect ordering; qr_r_tuned already wins everywhere, so this
+      plays for margin + a reusable Householder-apply block for the
+      future Hessenberg/eigen work).
+- [ ] The eigen flank (lahqr-class kernels): the remaining 2.5–3× gaps
+      live here (eigvals/schur 0.3–0.4× at most sizes).
+- [ ] LU residual at n≥256 (0.8–0.9× vs scipy): next levers per the
+      research plan are relaxed-FMA base kernels and packing the panel
+      columns; diminishing returns vs the eigen flank.
 
 ## Phase 3 — Wasm performance ✅ (2026-07-08; browser gate closed it 2026-07-09)
 

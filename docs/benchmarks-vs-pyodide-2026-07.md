@@ -12,8 +12,11 @@ measurement; n = 64 / 128 / 256.
 ## Headline — honest version
 
 **Pyodide wins most of this suite.** Geomean speedup of faer-wasm over
-Pyodide: **0.41×** — i.e. scipy/numpy's reference LAPACK, f2c'd to wasm,
-is ~2.4× faster overall at these sizes. faer-wasm wins exactly where its
+Pyodide: **0.41×** — i.e. scipy/numpy's LAPACK stack on wasm is ~2.4×
+faster overall at these sizes. [Correction from Run 4: the stack is
+OpenBLAS 0.3.28 with generic C kernels, not f2c'd reference LAPACK —
+the "simple loops compile to lean wasm" reading below survives, the
+library attribution does not.] faer-wasm wins exactly where its
 hand-written gemm microkernels dominate (matmul, 4–5× at n ≥ 128, real
 and complex); it loses the factorizations and eigensolvers, typically
 2–10×.
@@ -57,8 +60,9 @@ and complex); it loses the factorizations and eigensolvers, typically
   native machines: wide SIMD, deep blocking, cache-oblivious recursion.
   On wasm those shapes become overhead — this is the same disease as
   every blocking cliff this repo has measured, now visible externally.
-  Reference LAPACK is "dumb" Fortran through f2c: simple loops that
-  compile to lean wasm and, at n ≤ 256, win.
+  Their stack is simple loops that compile to lean wasm and, at
+  n ≤ 256, win. [Run 4 identified it: OpenBLAS generic-C kernels, not
+  f2c'd Fortran — same shape argument, corrected attribution.]
 - **matmul is the counterexample that proves it**: the gemm crate's
   microkernels are the one place faer's approach carries to wasm, and
   there faer beats numpy's wasm matmul 4–5×. That gap is also the
@@ -164,3 +168,37 @@ Approach-validation read (new-faer vs old-faer vs incumbent):
   panel updates (rank-2+), not more parameter search. Bounded,
   understood, and diminishing — the eigen flank's 2.5–3× gaps are the
   bigger target.
+
+## Run 4 — recursive LU + the BLAS reveal (2026-07-09, run 29023029694)
+
+`lu_factor_rec` is the recursive (`dgetrf2`/Toledo-shape) LU from
+`docs/research-lu-wasm-2026-07.md` plan item 1: the panel's memory-bound
+rank-1 work recast as trsm + gemm at growing ranks, flat simd128 loops
+only below the crossover. Same box, five LU implementations vs scipy:
+
+| n | rec | wk (blocked) | faer tuned | faer default | scipy | rec vs scipy |
+| -: | -: | -: | -: | -: | -: | -: |
+| 64 | **0.06 ms** | 0.06 ms | 0.08 ms | 1.48 ms | 0.09 ms | **1.5×** |
+| 128 | **0.35 ms** | 0.36 ms | 0.45 ms | 3.17 ms | 0.38 ms | **1.1×** |
+| 256 | **2.78 ms** | 3.26 ms | 3.29 ms | 13.88 ms | 2.44 ms | 0.9× |
+| 512 | **22.40 ms** | 27.39 ms | 29.45 ms | 83.49 ms | 18.45 ms | 0.8× |
+
+- **The recursion delivered what the research projected** (~20–22 ms at
+  n=512; measured 22.40): 15% over the blocked wk driver at 256, 18% at
+  512, identical below 256 (both go flat-loop-only there). scipy's lead
+  shrank from 1.35×/1.5× to 1.14×/1.21×.
+- **But not the way the theory said**: narrow crossovers (8–32) *lose* —
+  each skinny gemm's call overhead exceeds the flat-loop cost it
+  replaces. The winning shape is coarse: crossover 128, trsm base 64.
+  Measurement beat theory on the constants; the structure survived.
+- **The incumbent is now identified, not guessed** (this run prints
+  `numpy/scipy.show_config()`): Pyodide's scipy links **OpenBLAS 0.3.28
+  built with the generic C `RISCV64_GENERIC` target** (config string:
+  `... NO_AFFINITY=1 USE_OPENMP= RISCV64_GENERIC MAX_THREADS=4`), via
+  Emscripten. No architecture microkernels. Run 1's "f2c'd reference
+  LAPACK" read was wrong about the library and right about the shape:
+  their hot loops are autovectorized generic C, which explains both why
+  simple faer paths lost to it and why our gemm beats it 4–20×.
+- Suite geomean: **0.57×** (Run 1: 0.41×) — the LU/QR wins and the
+  matmul crossover pull it up; the eigen flank (0.1–0.6×) is what holds
+  it down and is the queued target.

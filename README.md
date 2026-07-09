@@ -84,7 +84,10 @@ their evidence.
 | no cliff-class perf regressions: op/matmul ratios (×3 band), O(n³) scaling windows, tuned-kernels-still-win guards | tested | CI-enforced | `bench/gate.mjs` vs `bench/expected-ratios.json`; bands sized to the 3–10× cliffs actually observed |
 | ops scale at their complexity class: fitted exponents in [1.8, 3.2], no step jumps > 4×(n₂/n₁)³ | tested | CI-enforced | `bench/complexity.mjs --gate` per push; full sweep tables in benchmarks doc |
 | Schur/EVD blocked path loses 2–13× on wasm ≤ n=384; `faer-schur` ships wasm-tuned defaults (`recommended_params`) | observed | scripted | threshold sweep 2026-07-09, tables in benchmarks doc; the complexity gate guards the fixed path |
-| vs Pyodide (scipy/numpy on wasm, same V8): faer wins matmul 4–5×, loses factorizations/eigensolvers 2–10×, geomean 0.41× at n ≤ 256 | observed | scripted | one Actions run 2026-07-09, `docs/benchmarks-vs-pyodide-2026-07.md`; re-runnable via manual workflow |
+| vs Pyodide (scipy/numpy on wasm, same V8): faer wins matmul 4–20×, tuned QR 1.3–1.7× everywhere; eigensolvers lose 2.5–3×; suite geomean 0.57× | observed | scripted | Actions runs 1–4 2026-07-09, `docs/benchmarks-vs-pyodide-2026-07.md`; re-runnable via manual workflow |
+| `faer-wasm-kernels` LU (blocked + recursive) factors correctly: ‖PA−LU‖/solve gates, identical pivots between the two drivers, agreement with faer | tested | CI-enforced | `kernels/tests/lu.rs` across sizes 1–512 × block/crossover settings, per push |
+| recursive LU is the fastest wasm LU measured: beats scipy at n ≤ 128 (1.1–1.5×), 0.8–0.9× at 256–512; 15–18% over the blocked driver | observed | scripted | Run 4 (29023029694), same-box protocol; local crossover sweeps 2026-07-09 |
+| Pyodide's scipy links OpenBLAS 0.3.28 built as generic C (`RISCV64_GENERIC`), no arch microkernels | tested | scripted | `show_config()` printed by every `pyodide-bench` run since Run 4 |
 
 ## Quick start
 
