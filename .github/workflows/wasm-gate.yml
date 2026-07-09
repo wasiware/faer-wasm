@@ -52,6 +52,7 @@ jobs:
             smoke-test
             bench
             schur
+            kernels
 
       - uses: actions/setup-node@v4
         with:
@@ -59,6 +60,10 @@ jobs:
 
       - name: faer-schur accuracy tests (native)
         working-directory: schur
+        run: cargo test --release
+
+      - name: faer-wasm-kernels property tests (native)
+        working-directory: kernels
         run: cargo test --release
 
       - name: Build all four variants

@@ -1,0 +1,18 @@
+[package]
+name = "faer-wasm-kernels"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Wasm-shaped dense kernels: LAPACK's proven blocked structure (lean flat-loop
+# panels + gemm-bound trailing updates) with the O(n^3) bulk routed through
+# faer's gemm — the one kernel family proven fast on wasm. Companion code:
+# depends only on faer's public API, no patches.
+
+[dependencies]
+faer = { path = "../faer-rs/faer", default-features = false, features = ["linalg"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
