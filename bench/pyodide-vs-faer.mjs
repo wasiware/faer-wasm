@@ -32,6 +32,7 @@ const OPS = [
 	['lu_factor_rec', 'run_lu_factor_rec', [0], 'sla.lu_factor(a)'],
 	['qr_r', 'run_qr', null, "np.linalg.qr(a, mode='r')"],
 	['qr_r_tuned', 'run_qr_factor_tuned', [1, 1 << 30], "np.linalg.qr(a, mode='r')"],
+	['qr_r_wk', 'run_qr_factor_wk', [], "np.linalg.qr(a, mode='r')"],
 	['svd', 'run_svd', null, 'np.linalg.svd(a)'],
 	['eigvals', 'run_gen_evd', null, 'np.linalg.eigvals(a)'],
 	['schur', 'run_schur', null, 'sla.schur(a)'],

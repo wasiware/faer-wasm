@@ -337,6 +337,18 @@ pub extern "C" fn run_qr_factor_tuned(block_size: usize, blocking_threshold: usi
     a[(0, 0)]
 }
 
+// The wasm-shaped unblocked Householder QR (kernels/src/qr.rs): fused
+// dlarfg + dlarf in flat simd128, no compact-WY/T-matrix/gemm.
+#[no_mangle]
+pub extern "C" fn run_qr_factor_wk() -> f64 {
+    let s = state();
+    let n = s.a.nrows();
+    let mut f = s.a.to_owned();
+    let mut tau = alloc::vec![0.0f64; n];
+    faer_wasm_kernels::qr::qr_factor_in_place(f.as_mut(), &mut tau);
+    f[(0, 0)] + f[(n - 1, n - 1)] + tau[n / 2]
+}
+
 #[cfg(target_arch = "wasm32")]
 mod wasm_shim {
     use core::alloc::{GlobalAlloc, Layout};

@@ -1,7 +1,8 @@
 //! Wasm-shaped dense kernels (Phase-2 companion code, architect-directed
 //! 2026-07-09): the operations the Pyodide head-to-head showed losing to
-//! f2c'd reference LAPACK, rebuilt the way the one winning kernel (gemm)
-//! was built — *for* this target.
+//! Pyodide's LAPACK (OpenBLAS 0.3.28 built as generic C, no arch
+//! microkernels), rebuilt the way the one winning kernel (gemm) was built —
+//! *for* this target.
 //!
 //! Design rule, learned from the benchmarks: wasm engines reward the code
 //! shape reference LAPACK happens to have (flat scalar loops over contiguous
@@ -18,3 +19,4 @@
 extern crate alloc;
 
 pub mod lu;
+pub mod qr;

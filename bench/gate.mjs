@@ -125,4 +125,12 @@ check('recursive LU ≤ blocked wk @256', recDefault <= wkBlocked * KERNEL_SLACK
 check('blocked wk LU ≤ faer-tuned @256', wkBlocked <= faerTunedLu * KERNEL_SLACK,
 	`wk/faer-tuned = ${(wkBlocked / faerTunedLu).toFixed(2)} (must be ≤ ${KERNEL_SLACK})`);
 
+// wasm-shaped unblocked QR: must stay well under faer's own unblocked
+// (block_size=1) path — the whole reason the kernel exists. Big observed
+// margin (~2-3×), so gate at a comfortable 0.8 rather than parity.
+const qrWk = await time('run_qr_factor_wk', 256, []);
+const qrFaerTuned = await time('run_qr_factor_tuned', 256, [1, 1 << 30]);
+check('wasm-shaped QR ≤ 0.8× faer-tuned @256', qrWk <= qrFaerTuned * 0.8,
+	`wk/faer-tuned = ${(qrWk / qrFaerTuned).toFixed(2)} (must be ≤ 0.8)`);
+
 process.exit(failed ? 1 : 0);
