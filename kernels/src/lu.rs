@@ -223,24 +223,31 @@ pub fn lu_solve_in_place(a: MatRef<'_, f64>, piv: &[usize], b: &mut [f64]) {
 
 /// Base-case width for [`lu_factor_recursive_in_place`] — below this the
 /// recursion switches to flat right-looking loops (ReLAPACK's crossover
-/// practice). Swept on wasm 2026-07-09: 64–160 are within run noise at
-/// n=256–512 (all beat the blocked driver); narrow crossovers (8–32) LOSE —
-/// they feed skinny gemms whose call overhead exceeds the flat-loop cost.
-pub const RECOMMENDED_CROSSOVER: usize = 128;
+/// practice). **Swept on the GitHub runner 2026-07-09** (`lu-tune.yml`,
+/// the machine the pyodide comparison runs on — dev-box sweeps had
+/// mis-picked 128): the runner wants a *wider* base case and *less*
+/// recursion. co=256 wins at n=256 (pure flat, no recursion — matches
+/// scipy) through n=512 (one split to 256-wide bases + gemm), beating the
+/// old co=128 by 5–16%. Narrow crossovers (≤64) lose badly: skinny gemms
+/// cost more than flat simd128 loops on 2-lane wasm.
+pub const RECOMMENDED_CROSSOVER: usize = 256;
 
 /// Recursive LU (`dgetrf2`/Toledo shape) — the top-ranked technique from
 /// docs/research-lu-wasm-2026-07.md: splitting at w/2 casts the panel's
 /// memory-bound rank-1 work into trsm + gemm at growing ranks; the
-/// `crossover`-wide base case runs the flat simd128 loops. Measured on wasm
-/// 2026-07-09 (local box): ~7% faster than [`lu_factor_in_place`] at n=256,
-/// ~11% at n=512, identical below (both go flat-loop-only there). The win
-/// is real but smaller than the research projection because the flat panel
-/// already runs near this box's skinny-gemm rate.
+/// `crossover`-wide base case runs the flat simd128 loops. Measured on the
+/// **runner** 2026-07-09 (`lu-tune.yml`, tuned defaults): beats the blocked
+/// [`lu_factor_in_place`] by 8–19% (n=192–512) and reaches scipy parity at
+/// n=256. The tuned shape recurses *little* — one split at n=512, none at
+/// n≤256 — because on 2-lane wasm the flat simd128 panel already runs near
+/// the rate a skinny gemm could, so extra recursion only adds call overhead.
 ///
 /// Base-case width for the recursive unit-lower trsm (`trsm_rec`) — below
 /// this the trsm runs flat simd128 substitution instead of splitting into
-/// gemms. Swept on the runner 2026-07-09 (see docs/benchmarks-vs-pyodide).
-pub const RECOMMENDED_TRSM_BASE: usize = 64;
+/// gemms. Swept on the runner 2026-07-09 (`lu-tune.yml`): 128 wins at
+/// n=384–512 (the sizes where the trsm actually recurses); 32–64 lose to
+/// tiny gemms, same lesson as the crossover.
+pub const RECOMMENDED_TRSM_BASE: usize = 128;
 
 /// Same output contract as [`lu_factor_in_place`] (LAPACK ipiv semantics):
 /// identical pivot sequence, factors equal up to gemm reassociation.

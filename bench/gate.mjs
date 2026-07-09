@@ -110,4 +110,19 @@ const qrTuned = await time('run_qr_factor_tuned', 128, [1, 1 << 30]); // panel w
 check('QR panel-1 vs default @128', qrTuned <= qrDefault * TUNED_SLACK,
 	`tuned/default = ${(qrTuned / qrDefault).toFixed(2)} (must be ≤ ${TUNED_SLACK})`);
 
+// --- 4. the wasm-shaped kernels must stay the fast path: the recursive LU
+// (runner-tuned defaults) must not regress vs the blocked driver, and the
+// blocked driver must not regress vs faer's own tuned LU. Guards against a
+// re-pin or a bad tune silently un-doing the kernel win. n=256: the size
+// where the recursive default is pure-flat and the gap is widest; use a
+// slack band since runner noise is real.
+const KERNEL_SLACK = 1.15;
+const recDefault = await time('run_lu_factor_rec', 256, [0]);   // tuned crossover/trsm
+const wkBlocked = await time('run_lu_factor_wk', 256, [0]);
+const faerTunedLu = await time('run_lu_factor_tuned', 256, [1 << 30, 0]);
+check('recursive LU ≤ blocked wk @256', recDefault <= wkBlocked * KERNEL_SLACK,
+	`rec/wk = ${(recDefault / wkBlocked).toFixed(2)} (must be ≤ ${KERNEL_SLACK})`);
+check('blocked wk LU ≤ faer-tuned @256', wkBlocked <= faerTunedLu * KERNEL_SLACK,
+	`wk/faer-tuned = ${(wkBlocked / faerTunedLu).toFixed(2)} (must be ≤ ${KERNEL_SLACK})`);
+
 process.exit(failed ? 1 : 0);
