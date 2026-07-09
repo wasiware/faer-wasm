@@ -65,9 +65,16 @@ jobs:
           node lu-tune.mjs target/wasm32-unknown-unknown/release/bench_harness.wasm \
             | tee lu-tune.log
 
+      - name: Large-n probe — does recursion ever beat pure-flat?
+        working-directory: bench
+        run: |
+          node lu-largen.mjs target/wasm32-unknown-unknown/release/bench_harness.wasm \
+            | tee lu-largen.log
+
       - uses: actions/upload-artifact@v4
         with:
           name: lu-tune
           path: |
             bench/lu-tune.log
             bench/lu-tune-results.json
+            bench/lu-largen.log
