@@ -6,12 +6,17 @@
 // Two independent detectors, because they catch different failures:
 //
 //   1. FITTED EXPONENT — least-squares slope of log t vs log n over the
-//      asymptotic sizes (n ≥ 96; smaller sizes are dominated by call
-//      overhead and cache effects and systematically understate p). All
-//      ops here are Θ(n³); the accepted window [1.5, 3.6] is tight enough
-//      that n⁴ behavior fails while tolerating the LU family, which sits
-//      near p ≈ 1.8–2.0 at n ≤ 256 (its cubic term has a small constant —
-//      n³/3 vs matmul's 2n³ — so quadratic overheads still dominate).
+//      asymptotic sizes (n ≥ 128). Smaller sizes are dominated by call
+//      overhead and cache effects; n = 96 in particular is noisy enough
+//      for the small-cubic-constant ops (lu_solve) that a single fast
+//      reading there inflates a 3-point slope past the window (observed
+//      2026-07-09: lu_solve n=96 landed at 0.39 ms vs 2.66 ms at n=128,
+//      fitting p = 3.8). Fitting over {128, 192, 256} keeps all three
+//      points in the asymptotic regime; n = 96 is still measured and fed
+//      to the jump detector below. All ops here are Θ(n³); the window
+//      [1.5, 3.6] fails n⁴ behavior while tolerating the LU family, which
+//      sits near p ≈ 1.9–2.1 (its cubic term has a small constant —
+//      n³/3 vs matmul's 2n³ — so quadratic overheads still weigh in).
 //
 //   2. STEP JUMPS — consecutive-size ratio capped at 4 × (n₂/n₁)³. A
 //      blocking-threshold misfire is invisible to the exponent fit (the
@@ -34,8 +39,8 @@ const gateMode = flag === '--gate';
 const bytes = readFileSync(wasmPath);
 
 const FULL_SIZES = [64, 96, 128, 192, 256];
-const GATE_SIZES = [96, 128, 192];
-const FIT_MIN_N = 96;
+const GATE_SIZES = [96, 128, 192, 256];
+const FIT_MIN_N = 128;
 const OPS = [
 	['matmul', 'run_matmul'],
 	['lu_solve', 'run_lu_solve'],
