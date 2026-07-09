@@ -17,10 +17,50 @@ use faer::linalg::matmul::matmul;
 use faer::prelude::*;
 use faer::{Accum, MatMut};
 
+/// `dst[i] -= src[i] * alpha` — the panel/trsm/solve workhorse. On wasm this
+/// is an explicit simd128 kernel (2 lanes × 2-unrolled; `v128_load`/`store`
+/// are alignment-free by spec); elsewhere a plain scalar loop. This is the
+/// "shaping": the same axpy faer expresses through generic SIMD dispatch,
+/// written the way the target actually executes it.
+#[inline(always)]
+unsafe fn axpy(dst: *mut f64, src: *const f64, alpha: f64, len: usize) {
+	#[cfg(target_arch = "wasm32")]
+	{
+		axpy_simd128(dst, src, alpha, len);
+	}
+	#[cfg(not(target_arch = "wasm32"))]
+	{
+		for i in 0..len {
+			*dst.add(i) -= *src.add(i) * alpha;
+		}
+	}
+}
+
+#[cfg(target_arch = "wasm32")]
+#[target_feature(enable = "simd128")]
+unsafe fn axpy_simd128(dst: *mut f64, src: *const f64, alpha: f64, len: usize) {
+	use core::arch::wasm32::*;
+	let va = f64x2_splat(alpha);
+	let mut i = 0usize;
+	while i + 4 <= len {
+		let d0 = v128_load(dst.add(i) as *const v128);
+		let s0 = v128_load(src.add(i) as *const v128);
+		let d1 = v128_load(dst.add(i + 2) as *const v128);
+		let s1 = v128_load(src.add(i + 2) as *const v128);
+		v128_store(dst.add(i) as *mut v128, f64x2_sub(d0, f64x2_mul(s0, va)));
+		v128_store(dst.add(i + 2) as *mut v128, f64x2_sub(d1, f64x2_mul(s1, va)));
+		i += 4;
+	}
+	while i < len {
+		*dst.add(i) -= *src.add(i) * alpha;
+		i += 1;
+	}
+}
+
 /// Block width. Swept on wasm 2026-07-09 (see docs/benchmarks-2026-07.md):
 /// panels narrower than ~24 waste gemm efficiency, wider ones spend too
 /// long in the O(n²·nb) panel at these sizes.
-pub const RECOMMENDED_BLOCK_SIZE: usize = 32;
+pub const RECOMMENDED_BLOCK_SIZE: usize = 64;
 
 /// Factors a square `A` in place into `P·A = L·U` (`L` unit lower, `U`
 /// upper, both stored in `a`), recording LAPACK-style pivots in `piv`.
@@ -30,7 +70,13 @@ pub fn lu_factor_in_place(mut a: MatMut<'_, f64>, piv: &mut [usize], nb: usize) 
 	assert!(a.ncols() == n, "square only for now");
 	assert!(piv.len() >= n);
 	assert!(a.row_stride() == 1, "column-major with unit row stride required");
-	let nb = if nb == 0 { RECOMMENDED_BLOCK_SIZE } else { nb };
+	// pure-panel mode through n=128: the lean panel alone matches scipy at
+	// small n, and skinny-k gemm calls cost more than they save there
+	let nb = if nb == 0 {
+		if n <= 128 { n.max(1) } else { RECOMMENDED_BLOCK_SIZE }
+	} else {
+		nb
+	};
 	let cs = a.col_stride() as usize;
 	let base = a.as_ptr_mut();
 
@@ -83,11 +129,7 @@ pub fn lu_factor_in_place(mut a: MatMut<'_, f64>, piv: &mut [usize], nb: usize) 
 					let colr = base.add((j + l) * cs);
 					let alk = *colr.add(jc);
 					if alk != 0.0 {
-						let mut i = jc + 1;
-						while i < n {
-							*colr.add(i) -= *col.add(i) * alk;
-							i += 1;
-						}
+						axpy(colr.add(jc + 1), col.add(jc + 1), alk, n - jc - 1);
 					}
 					l += 1;
 				}
@@ -123,11 +165,7 @@ pub fn lu_factor_in_place(mut a: MatMut<'_, f64>, piv: &mut [usize], nb: usize) 
 						let xk = *xc.add(j + k);
 						if xk != 0.0 {
 							let lc = base.add((j + k) * cs);
-							let mut i = j + k + 1;
-							while i < j + kb {
-								*xc.add(i) -= *lc.add(i) * xk;
-								i += 1;
-							}
+							axpy(xc.add(j + k + 1), lc.add(j + k + 1), xk, kb - k - 1);
 						}
 					}
 					c += 1;
@@ -168,9 +206,7 @@ pub fn lu_solve_in_place(a: MatRef<'_, f64>, piv: &[usize], b: &mut [f64]) {
 			let yk = b[k];
 			if yk != 0.0 {
 				let col = base.add(k * cs);
-				for i in k + 1..n {
-					b[i] -= *col.add(i) * yk;
-				}
+				axpy(b.as_mut_ptr().add(k + 1), col.add(k + 1), yk, n - k - 1);
 			}
 		}
 		// U x = y
@@ -179,9 +215,7 @@ pub fn lu_solve_in_place(a: MatRef<'_, f64>, piv: &[usize], b: &mut [f64]) {
 			let xk = b[k] / *col.add(k);
 			b[k] = xk;
 			if xk != 0.0 {
-				for i in 0..k {
-					b[i] -= *col.add(i) * xk;
-				}
+				axpy(b.as_mut_ptr(), col, xk, k);
 			}
 		}
 	}
