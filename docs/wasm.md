@@ -67,17 +67,16 @@ tree; budgets enforced in CI via `smoke-test/size-budgets.json`):
 | - | -: | -: |
 | matmul only | 59,207 | 66,000 |
 | + LU solve | 123,751 | 137,000 |
-| + QR, SVD, both EVDs, Schur (f64 + c64) | 738,486 | 806,000 |
-| same, `+simd128,+relaxed-simd` baked in | 726,178 | 793,000 |
+| + QR, SVD, both EVDs, Schur, dense c64 suite | 921,812 | 1,014,000 |
+| same, `+simd128,+relaxed-simd` baked in | 905,452 | 996,000 |
 
-The full variant grew from ~447 KB when `faer-schur` landed (§8): real
-Schur + reordering is only ~+26 KB (its kernels were already in the
-binary via the EVD), but the **c64 Schur adds ~+260 KB** — the whole
-complex eigensolver stack, monomorphized for the first time (the earlier
-"general EVD" probe fed a real matrix into the real kernels). Skip the
-complex driver if you don't need it and the ~473 KB / ~400 KB planning
-numbers still hold. `wasm-opt` and gzip/brotli transport shrink all of
-these further (unmeasured here).
+The full variant is dominated by c64 monomorphizations added as the
+foundation gate grew: from ~447 KB, real Schur + reordering added ~26 KB
+(kernels already present via the EVD), the c64 Schur/eigensolver stack
+~260 KB, and the c64 LU/QR/LLT/SVD/hermitian-EVD stacks another ~183 KB.
+A real-only consumer stays near ~500 KB; ~400 KB remains the lean
+planning number (research staging). `wasm-opt` and gzip/brotli transport
+shrink all of these further (unmeasured here).
 
 ## 4. SIMD
 
@@ -151,9 +150,12 @@ reductions to kick in.
 On every push/PR: fetch both upstreams at the pinned commits → apply
 `patches/` → run the `faer-schur` accuracy tests natively → build all
 four variants → run each under node with exact value checks and size
-budgets → cross-target determinism (bit-for-bit). If a faer re-pin or a
-dependency bump breaks the build, changes a result bit, or bloats a
-binary past budget, the gate fails. `schur_probe_cplx == 3` is required
+budgets → cross-target determinism (bit-for-bit) → the same probes in
+**headless Chrome** (`browser-check.mjs`, raw CDP — a real browser, not
+node) → the **efficiency gate** (`bench/gate.mjs`: op/matmul ratio bands,
+O(n³) scaling windows, tuned-vs-default guards). If a faer re-pin or a
+dependency bump breaks the build, changes a result bit, bloats a binary
+past budget, or introduces a cliff-class slowdown, the gate fails. `schur_probe_cplx == 3` is required
 on both full variants — on full-relaxed it doubles as the regression
 guard for the carried pulp fix (§4): a re-pin that drops the patch while
 upstream is still broken fails immediately.

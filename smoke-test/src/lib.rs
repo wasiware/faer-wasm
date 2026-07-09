@@ -203,6 +203,34 @@ pub extern "C" fn schur_probe_cplx() -> f64 {
     score
 }
 
+#[cfg(feature = "full")]
+mod dense_probes;
+
+#[cfg(feature = "full")]
+pub fn dense_probes_f64_errors(n: usize) -> [f64; 13] {
+    dense_probes::f64_errors(n)
+}
+
+#[cfg(feature = "full")]
+pub fn dense_probes_c64_errors(n: usize) -> [f64; 12] {
+    dense_probes::c64_errors(n)
+}
+
+// Foundation gate: the "simple" decompositions (LU/QR/LLT/SVD/EVD) property-
+// checked at n=33 (SIMD tail lanes) and n=96 (blocked paths), f64 and c64.
+// Integer scores, exact across targets; see src/dense_probes.rs.
+#[cfg(feature = "full")]
+#[no_mangle]
+pub extern "C" fn dense_f64_probe() -> f64 {
+    dense_probes::f64_score()
+}
+
+#[cfg(feature = "full")]
+#[no_mangle]
+pub extern "C" fn dense_c64_probe() -> f64 {
+    dense_probes::c64_score()
+}
+
 #[cfg(target_arch = "wasm32")]
 mod wasm_shim {
     use core::alloc::{GlobalAlloc, Layout};

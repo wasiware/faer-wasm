@@ -92,9 +92,19 @@ jobs:
           node determinism.mjs full.wasm native-bits.txt
           node determinism.mjs full-relaxed.wasm native-bits.txt
 
-      - name: Bench harness stays buildable (build + smoke, no timing)
+      - name: Browser gate (headless Chrome — a real browser, not node)
+        working-directory: smoke-test
+        run: |
+          set -eux
+          export CHROME=$(command -v google-chrome || command -v chromium-browser || command -v chromium)
+          node browser-check.mjs full.wasm full
+          node browser-check.mjs full-relaxed.wasm full-relaxed
+
+      - name: Bench harness (build + smoke) and efficiency gate
         working-directory: bench
         run: |
           set -eux
           cargo build --lib --profile release-z --target wasm32-unknown-unknown
           node bench.mjs target/wasm32-unknown-unknown/release-z/bench_harness.wasm smoke --smoke
+          cargo build --lib --release --target wasm32-unknown-unknown
+          node gate.mjs target/wasm32-unknown-unknown/release/bench_harness.wasm

@@ -8,23 +8,12 @@
 //    doubles, not tolerances. This applies to the relaxed-SIMD build too.
 // 2. Size budget from size-budgets.json — catches dependency/codegen creep.
 import { readFileSync } from 'node:fs';
+import { reference, required as requiredByVariant } from './references.mjs';
 
 const wasmPath = process.argv[2] ?? './target/wasm32-unknown-unknown/release/consumer.wasm';
 const variant = process.argv[3] ?? 'full';
 
-const reference = {
-	matmul_trace: 114,
-	lu_solve_sum: 0.8857142857142857,   // 31/35
-	qr_svd_evd_probe: 1.9483450492039642,
-	schur_probe: 11,        // faer-schur real f64 property score: 6 checks + m=5 (see smoke-test/src/lib.rs)
-	schur_probe_cplx: 3,    // faer-schur c64 property score; guards patches/pulp/0003 (relaxed-simd complex mul fix)
-};
-const required = {
-	'matmul': ['matmul_trace'],
-	'lu': ['matmul_trace', 'lu_solve_sum'],
-	'full': ['matmul_trace', 'lu_solve_sum', 'qr_svd_evd_probe', 'schur_probe', 'schur_probe_cplx'],
-	'full-relaxed': ['matmul_trace', 'lu_solve_sum', 'qr_svd_evd_probe', 'schur_probe', 'schur_probe_cplx'],
-}[variant];
+const required = requiredByVariant[variant];
 if (!required) {
 	console.error(`unknown variant "${variant}" (want matmul | lu | full | full-relaxed)`);
 	process.exit(2);

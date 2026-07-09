@@ -79,10 +79,14 @@ a duplicate-`panic_impl` error. Determinism cross-check:
 node determinism.mjs <wasm> native-bits.txt`.)
 
 Results were bit-identical between native x86-64 and wasm in the 2026-07
-verification — treat any cross-target difference as a bug, not noise. CI
-(`.github/workflows/wasm-gate.yml`) runs the same gate across all four
-build variants with size budgets from `smoke-test/size-budgets.json`;
-current sizes are tabulated in `docs/wasm.md` §3.
+verification — treat any cross-target difference as a bug, not noise
+for the fixed-value probes (larger eigen-pipelines are property-scored
+instead; docs/wasm.md §5). CI (`.github/workflows/wasm-gate.yml`) runs
+the gate across all four build variants with size budgets from
+`smoke-test/size-budgets.json`, plus: faer-schur accuracy tests, dense
+f64+c64 foundation probes, the same probes in headless Chrome
+(`browser-check.mjs`), and the bench efficiency gate (`bench/gate.mjs`).
+Current sizes are tabulated in `docs/wasm.md` §3.
 
 ## Upstream policy
 

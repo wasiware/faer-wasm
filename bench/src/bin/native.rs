@@ -30,6 +30,9 @@ fn main() {
         ("svd", 256, bench_harness::run_svd),
         ("sa_evd", 256, bench_harness::run_sa_evd),
         ("gen_evd", 128, bench_harness::run_gen_evd),
+        ("matmul_c64", 256, bench_harness::run_matmul_c64),
+        ("lu_solve_c64", 256, bench_harness::run_lu_solve_c64),
+        ("qr_c64", 256, bench_harness::run_qr_c64),
     ];
     for &n in &[32usize, 64, 128, 256] {
         bench_harness::setup(n);

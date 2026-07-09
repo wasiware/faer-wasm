@@ -172,3 +172,18 @@ eventually. SVD/EVD (3.3×+ untuned) route through their own
 internally-parameterized bidiagonalization/tridiagonalization and likely
 suffer the same class of overhead; squeezing them is recorded as a
 possible follow-up, not attempted here.
+
+## Efficiency gate (added 2026-07-09)
+
+The one-shot numbers above are now backed by a per-push CI gate
+(`bench/gate.mjs`, opt-level-3 wasm under node): op/matmul wall-time
+ratios at n=128 checked against `bench/expected-ratios.json` within a ×3
+band, O(n³) scaling windows (256/128 ∈ [3, 26]), and tuned-vs-default
+guards asserting the §7 recipe of `docs/wasm.md` still wins (measured
+2026-07-09: unblocked LU = 0.20× default, panel-1 QR = 0.24× default at
+n=128). Bands are sized to the 3–10× cliff-class regressions this
+harness has actually caught, so shared-runner noise can't trip them.
+
+The harness also gained c64 ops. Recorded ratios vs f64 matmul at n=128
+(node/V8, opt-3): c64 matmul 3.1×, c64 LU solve 4.1×, c64 QR 12.9× —
+the first complex-arithmetic overhead numbers for this stack on wasm.

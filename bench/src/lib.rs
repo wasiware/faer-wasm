@@ -18,6 +18,9 @@ struct State {
     b: Mat<f64>,
     sym: Mat<f64>,
     rhs: Mat<f64>,
+    ac: Mat<faer::c64>,
+    bc: Mat<faer::c64>,
+    rhsc: Mat<faer::c64>,
 }
 
 struct StateCell(core::cell::UnsafeCell<Option<State>>);
@@ -49,7 +52,43 @@ pub extern "C" fn setup(n: usize) {
         sym[(i, i)] += 2.0 * n as f64;
     }
     let rhs = fill(n, 1, 0x853C49E6748FEA9B);
-    unsafe { *STATE.0.get() = Some(State { a, b, sym, rhs }) }
+    // c64 twins of a/b/rhs for the complex ops
+    let re = fill(n, n, 0x2545F4914F6CDD1D);
+    let im = fill(n, n, 0x94D049BB133111EB);
+    let ac = Mat::from_fn(n, n, |i, j| faer::c64::new(re[(i, j)], im[(i, j)]));
+    let re = fill(n, n, 0xBF58476D1CE4E5B9);
+    let im = fill(n, n, 0x9E3779B97F4A7C15);
+    let bc = Mat::from_fn(n, n, |i, j| faer::c64::new(re[(i, j)], im[(i, j)]));
+    let re = fill(n, 1, 0xD6E8FEB86659FD93);
+    let im = fill(n, 1, 0xCA5A826395121157);
+    let rhsc = Mat::from_fn(n, 1, |i, j| faer::c64::new(re[(i, j)], im[(i, j)]));
+    unsafe { *STATE.0.get() = Some(State { a, b, sym, rhs, ac, bc, rhsc }) }
+}
+
+#[no_mangle]
+pub extern "C" fn run_matmul_c64() -> f64 {
+    let s = state();
+    let c = &s.ac * &s.bc;
+    let n = c.nrows();
+    c[(0, 0)].re + c[(n - 1, n - 1)].im
+}
+
+#[no_mangle]
+pub extern "C" fn run_lu_solve_c64() -> f64 {
+    use faer::prelude::*;
+    let s = state();
+    let x = s.ac.partial_piv_lu().solve(&s.rhsc);
+    let n = x.nrows();
+    x[(0, 0)].re + x[(n - 1, 0)].im
+}
+
+#[no_mangle]
+pub extern "C" fn run_qr_c64() -> f64 {
+    let s = state();
+    let qr = s.ac.qr();
+    let r = qr.R();
+    let n = r.nrows();
+    r[(0, 0)].re + r[(n - 1, n - 1)].im
 }
 
 #[no_mangle]

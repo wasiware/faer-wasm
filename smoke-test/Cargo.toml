@@ -10,6 +10,10 @@ crate-type = ["cdylib", "rlib"]
 name = "native"
 required-features = ["full"]
 
+[[bin]]
+name = "margins"
+required-features = ["full"]
+
 [dependencies]
 faer = { path = "../faer-rs/faer", default-features = false, features = ["linalg"] }
 faer-schur = { path = "../schur", optional = true }

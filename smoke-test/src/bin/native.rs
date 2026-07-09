@@ -13,4 +13,12 @@ fn main() {
         "schur_probe_cplx={:016x}",
         consumer::schur_probe_cplx().to_bits()
     );
+    println!(
+        "dense_f64_probe={:016x}",
+        consumer::dense_f64_probe().to_bits()
+    );
+    println!(
+        "dense_c64_probe={:016x}",
+        consumer::dense_c64_probe().to_bits()
+    );
 }

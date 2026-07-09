@@ -44,9 +44,10 @@ Empirical basis in docs/.
   work (and `rayon`, which doesn't), the `no_std` zero-import pattern,
   sizes + budgets, the relaxed-SIMD (FMA) route, determinism guarantee.
 - `bench/` + `docs/benchmarks-2026-07.md` — the wasm-vs-native benchmark
-  harness and its first published numbers (opt-level ~1.75×, relaxed-SIMD
-  ~11%, large matmul at 1.8–1.9× native, mid-size blocking cliffs
-  identified).
+  harness (f64 + c64 ops) and its first published numbers (opt-level
+  ~1.75×, relaxed-SIMD ~11%, large matmul at 1.8–1.9× native, mid-size
+  blocking cliffs identified), plus `gate.mjs`: the CI efficiency gate
+  (ratio bands, scaling windows, tuned-vs-default guards).
 - `docs/research-faer-wasm-2026-07.md` — the verification research:
   measured sizes (51 KiB matmul → ~396 KiB full suite), pulp simd128 status
   (already complete upstream), LinearAlgebra coverage matrix.
@@ -64,7 +65,7 @@ their evidence.
 | patches apply cleanly on the pinned base | tested | CI-enforced | gate does clone → pin → apply |
 | full dense suite runs under node, exact hand-verified values | tested | CI-enforced | `check.mjs`, 4 build variants |
 | native ↔ wasm bit-identical, incl. relaxed-SIMD build | tested | CI-enforced | `determinism.mjs` (3 probes spanning matmul/LU/QR/SVD/EVD — not all inputs; known NOT to extend to 8×8 Schur raw doubles, see docs/wasm.md §5) |
-| `.wasm` sizes 59→738 KB, within budgets | tested | CI-enforced | `size-budgets.json` |
+| `.wasm` sizes 59→922 KB, within budgets (c64 stacks dominate; real-only ~500 KB) | tested | CI-enforced | `size-budgets.json` |
 | relaxed-SIMD emits real FMA (`relaxed_madd`) | observed | by-hand | 2026-07 disassembly counts |
 | `rayon` cannot build on wasm32 | observed | by-hand | build probe at the pin |
 | perf: matmul 1.9× native; opt-level z→3 ≈ 1.75×; relaxed-SIMD ≈ +11% | observed | scripted | `bench/`, min-of-2 reps, shared box |
@@ -74,7 +75,9 @@ their evidence.
 | shelved upstream patches recreate the branch byte-identically | observed | by-hand | `git am` round-trip, 2026-07-08 |
 | SVD/EVD wasm overhead is untuned (~3.3×+) | observed | scripted | bench tables |
 | blocked paths must win beyond some n | stated | — | untested past n=256 |
-| runs in real browsers (only node/V8 exercised) | stated | — | browser run never performed |
+| foundation ops (LU/QR/LLT/SVD/EVD/eigenvalues) correct at n=33 (SIMD tails) + n=96 (blocked paths), f64 AND c64 | tested | CI-enforced | `dense_f64_probe`=26 / `dense_c64_probe`=24, identical on native, node, and Chrome, all full variants |
+| runs in real browsers (headless Chrome, incl. relaxed-SIMD variant) | tested | CI-enforced | `browser-check.mjs` (raw CDP), exact values, every push |
+| no cliff-class perf regressions: op/matmul ratios (×3 band), O(n³) scaling windows, tuned-kernels-still-win guards | tested | CI-enforced | `bench/gate.mjs` vs `bench/expected-ratios.json`; bands sized to the 3–10× cliffs actually observed |
 
 ## Quick start
 

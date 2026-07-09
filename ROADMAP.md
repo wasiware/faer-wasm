@@ -101,12 +101,39 @@ Already covered (no work): LU (partial+full pivot), LLT/pivoted-LLT/LDLT/
 Bunch-Kaufman, QR ± column pivoting, SVD, self-adjoint + general EVD,
 generalized EVD (QZ), triangular solve/inverse, full complex support.
 
-## Phase 3 — Wasm performance ✅ (2026-07-08; browser-run refinement open)
+## Foundation gate — correctness × efficiency for the simple ops ✅ (2026-07-09)
+
+Architect-directed (2026-07-09): get the simple stuff verifiably right —
+correct AND efficient — before building more complex layers on it.
+
+- [x] **Dense correctness probes** (`smoke-test/src/dense_probes.rs`):
+      LU / QR / LLT / SVD / self-adjoint EVD / general eigenvalues,
+      **f64 and c64**, at n=33 (SIMD tail lanes) and n=96 (blocked
+      paths) — the regime where the pulp c64 bug and faer's workspace
+      junk lived, invisible to the 3×3 probes. Property-scored
+      (residuals/orthogonality/structure vs tolerances ≥2 orders above
+      measured errors — see the `margins` bin); scores 26/24 identical
+      on native, node, and Chrome, all full variants, every push.
+- [x] **Efficiency gate** (`bench/gate.mjs`, in CI): op/matmul ratio
+      bands (×3) vs recorded `expected-ratios.json`, O(n³) scaling
+      windows, and tuned-vs-default guards that fail if the
+      docs/wasm.md §7 guidance ever stops winning. Bands sized to the
+      cliff-class regressions actually observed (3–10×), robust to
+      shared-runner noise. Bench harness gained c64 ops (c64 matmul ≈
+      3.1× f64 at n=128; c64 LU ≈ 4.1×; c64 QR ≈ 12.9× — recorded).
+- [x] **Browser gate** (`smoke-test/browser-check.mjs`, in CI): all
+      probes exact in headless Chrome via raw CDP (no npm deps),
+      including the relaxed-SIMD build — closes Phase 3's browser-run
+      refinement; "runs in real browsers" is now CI-enforced.
+- Still open here: the external baseline (OpenBLAS 1T / NT / pure-JS —
+  the undecided Phase 3 question) now has a harness to plug into.
+
+## Phase 3 — Wasm performance ✅ (2026-07-08; browser gate closed it 2026-07-09)
 
 - [x] A **benchmark harness** (`bench/`): wasm-vs-native per decomposition
       across sizes under node, results in `docs/benchmarks-2026-07.md`;
-      CI keeps it buildable. Browser run: follow-up refinement, on real
-      hardware.
+      CI keeps it buildable. Browser run: done via the foundation gate's
+      browser-check.mjs (2026-07-09).
 - [x] Relaxed-SIMD vs baseline deltas, published: ~11% geomean, up to
       ~25% on SVD/self-adjoint EVD at n≥128. Also measured: `opt-level`
       z→3 is ~1.75× overall — the biggest knob we control.
