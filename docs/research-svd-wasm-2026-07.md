@@ -215,6 +215,74 @@ residual slivers are marginal (a bandwidth-optimal bidiag GEMV worth ~10–15%
 of the ~30%-of-time reduction phase = ~3–5% of total; a faster shared gemm
 kernel that would lift matmul/QR/LU/SVD alike). No cheap large win exists.
 
+## Adversarially-verified pass: the universal negative HOLDS (2026-07-10)
+
+The architect challenged the depth of the 4-angle fan-out — rightly: its
+"no unexplored approach wins" conclusion was a single-agent universal
+negative, the weakest grade in the synthesis. So the full deep-research
+harness was run on exactly that claim (103 agents: 5 search angles → 21
+sources fetched → 84 falsifiable claims extracted → top 25 through 3-vote
+adversarial verification, 2/3 refutes to kill). Result: **23 confirmed,
+2 refuted (both overreach in our favor's direction, excluded), 0
+unverified. The negative holds for every candidate family that produced
+evidence — and for the majors it is conceded by each method's own
+inventors in peer-reviewed venues.**
+
+Per-family verdicts (all vs dgesdd-class D&C, single-thread, n≤512):
+
+- **Preconditioned Jacobi (dgejsv/Drmač–Veselić)** — killed 9–0.
+  The inventors' own LAWN 170 data: the fully preconditioned code averages
+  **~1.5–2× slower than SGESDD**. Part I's "outperforms" claim is vs
+  QR-iteration SVD (dgesvd-class), never vs D&C; Part II's abstract caps at
+  "comparable to" bidiagonalization methods. The "2–6 sweeps" figure that
+  motivated our earlier hope is **not documented in LAPACK at all** (only
+  the 30-sweep cap is); and dgejsv's preconditioner is *pivoted* QR
+  (DGEQP3), which our fast unpivoted QR kernel only partially helps.
+  Starting 1.5–2× behind, Jacobi would need a ~3× relative swing from the
+  wasm shift to win — and 2 lanes penalize rotation kernels at least as
+  much as gemm.
+- **Mixed-precision Jacobi (TOMS 2025, state of the art)** — confirms the
+  cap: its ~2× gain is over LAPACK's *Jacobi* baseline, not dgesdd, so at
+  best parity — and it's out of scope for pure f64 anyway.
+- **QDWH-SVD (polar decomposition)** — killed 24–0 across eight claims.
+  Author-conceded (Nakatsukasa–Higham SISC 2013; Sukkari et al. TOMS
+  2016/2019): up to **2× more flops** than bidiagonalization SVD
+  (~35–52 n³ vs ~22 n³); every published win is explicitly attributed to
+  level-3 BLAS *concurrency* recouping that overhead on GPU/manycore. On
+  one thread with gemm already at the 5.6 GF/s roofline, a 2× flop deficit
+  would need ~3× the incumbent's throughput to reach a 1.5× win —
+  arithmetically impossible under the same roofline.
+- **Zolo-SVD** — killed 8–1: strictly more flops than QDWH (recouped only
+  by embarrassingly-parallel independent factorizations, r≈8 per iter);
+  flop hierarchy Zolo > QDWH > dgesdd. No serial win exists in print.
+- **QR-preprocessed SVD (Algorithm 977 / xGESVDQ)** — killed 5–1: on
+  square inputs it is structurally xGESVD **plus** an added pivoted QR —
+  strictly more work; its claims are accuracy-only. The m≫n regime where
+  QR-preprocessing replaces work doesn't apply to square.
+- **Serial block-Jacobi with gemm rotations (Demmel et al., June 2025)** —
+  the one live research thread, confirmed 6–0 but doesn't help: proves
+  communication optimality (gemm-rich, cache-optimal), NOT a flop
+  reduction; zero benchmarks vs dgesdd; its arithmetic improvements hold
+  "for galactic matrices." Communication optimality buys nothing where the
+  incumbent's gemm is already compute-bound at peak. Watch for Part Two.
+
+**Not covered by surviving claims** (graded *stated*, absence-of-evidence
+only): dqds+inverse-iteration/MRRR-style vectors (xBDSVDX never fully
+landed; clustered values need O(n³) reorthogonalization), SVD via Gram
+matrix (κ² accuracy loss; cost structure a superset of dgesdd's) or
+Jordan–Wielandt (2n dimension ⇒ ~8× eig cost), and spectral D&C standalone
+(addressed only via its QDWH/Zolo instantiations). Standard arguments say
+all three lose; they were not adversarially verified.
+
+**Evidence-grade upshot:** "SVD has no >1.5× wasm win available" is now
+**tested + cross-checked** (published measurements, author concessions,
+3-vote adversarial verification, 21 sources) for all major families —
+upgraded from the single-agent *stated* grade the architect flagged. The
+residual engineering question the research leaves open is the one already
+half-answered here: faer's remaining 0.5–0.8× gap vs scipy is
+constant-factor overhead in the incumbent algorithm (the gap shrinks
+7×→1.2× as n grows — fixed-overhead signature), not an algorithm choice.
+
 ## Sources
 LAWN 169/170 (netlib), Drmač–Veselić Part I/II, Demmel–Veselić (SIAM 1992),
 Computing SVD with high relative accuracy (LAA 1999), vectorized Jacobi
