@@ -261,6 +261,46 @@ pub extern "C" fn run_svd() -> f64 {
     s.a.svd().unwrap().S()[0]
 }
 
+// SVD with a tunable divide-and-conquer recursion_threshold. Deep research
+// (2026-07-10) found faer's default 128 forces bidiagonal blocks up to 127
+// through the SCALAR qr_algorithm (Givens vector accumulation, no SIMD),
+// where LAPACK dbdsdc uses ~25-leaves + gemm merges — the root cause of
+// faer SVD losing to scipy at small n. Sweep this to test the fix.
+// recursion_threshold = 0 -> faer default (128).
+#[no_mangle]
+pub extern "C" fn run_svd_tuned(recursion_threshold: usize) -> f64 {
+    use faer::diag::Diag;
+    use faer::linalg::svd::{svd, svd_scratch, ComputeSvdVectors, SvdParams};
+    let s = state();
+    let n = s.a.nrows();
+    let mut sv = Diag::<f64>::zeros(n);
+    let mut u = Mat::<f64>::zeros(n, n);
+    let mut v = Mat::<f64>::zeros(n, n);
+    let mut params: SvdParams = Auto::<f64>::auto();
+    if recursion_threshold != 0 {
+        params.recursion_threshold = recursion_threshold;
+    }
+    let mut mem = MemBuffer::new(svd_scratch::<f64>(
+        n,
+        n,
+        ComputeSvdVectors::Full,
+        ComputeSvdVectors::Full,
+        Par::Seq,
+        Spec::new(params),
+    ));
+    svd(
+        s.a.as_ref(),
+        sv.as_mut(),
+        Some(u.as_mut()),
+        Some(v.as_mut()),
+        Par::Seq,
+        MemStack::new(&mut mem),
+        Spec::new(params),
+    )
+    .unwrap();
+    sv.column_vector()[0] + u[(0, 0)] + v[(n - 1, n - 1)]
+}
+
 // --- SVD roofline profiling (architect direction 2026-07-10: locate the
 // machine ceiling and where faer's SVD time actually goes, before deciding
 // tune-bidiag vs build-Jacobi). ---

@@ -64,7 +64,15 @@ jobs:
           node svd-roofline.mjs target/wasm32-unknown-unknown/release/bench_harness.wasm \
             | tee svd-roofline.log
 
+      - name: SVD recursion_threshold sweep (root-cause fix test)
+        working-directory: bench
+        run: |
+          node svd-tune.mjs target/wasm32-unknown-unknown/release/bench_harness.wasm \
+            | tee svd-tune.log
+
       - uses: actions/upload-artifact@v4
         with:
           name: svd-roofline
-          path: bench/svd-roofline.log
+          path: |
+            bench/svd-roofline.log
+            bench/svd-tune.log
