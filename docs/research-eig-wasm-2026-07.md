@@ -119,6 +119,34 @@ better on lahqr — that residual gap is real wasm shaping, not the bug).
 faer-schur's `recommended_params` lahqr pin (usize::MAX) must be
 re-swept for the Schur-with-vectors case post-0004.
 
+## Three-way with 0004 (pyodide run 29119238887)
+
+| op | n | faer | scipy | ratio (pre-0004) |
+| - | -: | -: | -: | - |
+| eigvals | 128 | 131.9 ms | 11.2 ms | 0.1× (unchanged — bug starts at 150) |
+| eigvals | 256 | 204.1 ms | 85.3 ms | 0.4× (0.3×) |
+| eigvals | 512 | 835.9 ms | 592.5 ms | **0.7×** (0.3–0.4×) |
+| schur | 512 | 2083.5 ms | 744.8 ms | 0.4× (lahqr-pinned, pays at large n) |
+
+(The eigvals@512 wall time differs between runner instances — 598 ms on
+the evd-tune machine vs 836 ms here; ratios within a run are the honest
+comparison.) What the full grid adds beyond the bug:
+
+1. **faer's multishift is ~8× slower than LAPACK's multishift at n=128**
+   (94 vs 11 ms) where the window bug never applied and iteration counts
+   are modest (52 AED/39 sweeps) — a genuine per-sweep implementation gap
+   on wasm (suspects: `multishift_qr_sweep`'s small-gemm block updates
+   and workspace copies on 2 lanes). Meanwhile faer's scalar lahqr
+   (14.7 ms) is within 1.3× of scipy — so at n≤256 the cheap move is the
+   threshold, and the expensive question is the sweep kernel.
+2. **A wasm-tuned `blocking_threshold` ≈ 384** (lahqr below, multishift
+   above) projects eigvals to ~0.7–0.8× scipy across all sizes with no
+   further code: 14.7 ms @128 (0.76×), 110 @256 (0.77×), 598 @512
+   (0.99× on matched hardware). Companion-level params (faer's public
+   `evd_real` takes `Spec<EvdParams>`) — no additional patch needed.
+3. **faer-schur's lahqr pin now costs 2.8× at n=512** for Schur-with-Z
+   (2083 vs ~750 ms) — re-sweep the pin post-0004.
+
 ## Status / next
 
 - [x] Patch 0004 minted, round-trip verified (`git apply` clean on
