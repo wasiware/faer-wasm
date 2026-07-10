@@ -259,6 +259,32 @@ valid, not the absolutes against earlier runs.
 - The projection ("large QR lead") held and then some. Gated at
   `wk ≤ 0.8×faer-tuned` so it can't silently regress.
 
+## Run 8 — wasm-shaped LU solve wired in (2026-07-10, run 29061871875)
+
+The full Ax=b solve (`run_lu_solve_wk` = flat factor + our forward/back
+substitution, `lu_solve_in_place`) against `np.linalg.solve` — the solve
+kernel already existed and was correctness-gated; this only wired it into
+the bench (the prior `lu_solve` row used faer's default path, hence 0.1–0.5×).
+
+| n | lu_solve_wk | scipy (np.linalg.solve) | speedup |
+| -: | -: | -: | -: |
+| 64 | **0.06 ms** | 0.09 | **1.6×** |
+| 128 | **0.34 ms** | 0.56 | **1.6×** |
+| 256 | **2.44 ms** | 4.07 | **1.7×** |
+| 512 | **22.79 ms** | 32.69 | **1.4×** |
+
+- **A clean win at every size, 1.4–1.7×** — up from the 0.1–0.5× the
+  default-path `lu_solve` row still shows. No new kernel: LU-solve's only
+  dependency was LU-factor, which we already had. Solve = flat factor
+  (fastest wasm LU) + O(n²) substitution (cheap), so it inherits the
+  factor's standing and adds negligible cost.
+- It edges past our LU-*factor*-vs-scipy ratio because it's built on the
+  flat factor (the default now) and `np.linalg.solve` is heavier than
+  scipy's `lu_factor`; still an honest factor+solve vs factor+solve match.
+- Suite geomean **0.67×** (Run 6: 0.58×), pulled up by the qr_wk and
+  lu_solve_wk wins. The eigen flank (SVD/eigvals/Schur, 0.2–0.4×) is now
+  unambiguously the sole remaining loss.
+
 ## Run 7 — recursion verdict: removed from the LU default (2026-07-09, run 29051443596)
 
 Follow-up to the architect's doubt ("recursion is active exactly where we
