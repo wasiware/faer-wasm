@@ -26,6 +26,7 @@ const SIZES = [64, 128, 256, 512];
 const OPS = [
 	['matmul', 'run_matmul', null, 'a @ b'],
 	['lu_solve', 'run_lu_solve', null, 'np.linalg.solve(a, rhs)'],
+	['lu_solve_wk', 'run_lu_solve_wk', [], 'np.linalg.solve(a, rhs)'],
 	['lu_factor', 'run_lu_factor_tuned', [0, 0], 'sla.lu_factor(a)'],
 	['lu_factor_tuned', 'run_lu_factor_tuned', [1 << 30, 0], 'sla.lu_factor(a)'],
 	['lu_factor_wk', 'run_lu_factor_wk', [0], 'sla.lu_factor(a)'],

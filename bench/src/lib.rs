@@ -140,6 +140,24 @@ pub extern "C" fn run_lu_factor_rec_tuned(crossover: usize, trsm_base: usize) ->
     f[(0, 0)] + f[(n - 1, n - 1)] + piv[n / 2] as f64
 }
 
+// Full Ax=b via the wasm-shaped kernels: flat LU factor + our forward/back
+// substitution (kernels' lu_solve_in_place). Comparable to np.linalg.solve
+// (factor + solve), unlike run_lu_solve which uses faer's default path.
+#[no_mangle]
+pub extern "C" fn run_lu_solve_wk() -> f64 {
+    let s = state();
+    let n = s.a.nrows();
+    let mut f = s.a.to_owned();
+    let mut piv = alloc::vec![0usize; n];
+    faer_wasm_kernels::lu::lu_factor_recursive_in_place(f.as_mut(), &mut piv, 0);
+    let mut x = alloc::vec![0.0f64; n];
+    for i in 0..n {
+        x[i] = s.rhs[(i, 0)];
+    }
+    faer_wasm_kernels::lu::lu_solve_in_place(f.as_ref(), &piv, &mut x);
+    x[0] + x[n - 1]
+}
+
 #[no_mangle]
 pub extern "C" fn run_schur_tuned(blocking_threshold: usize) -> f64 {
     use faer::dyn_stack::{MemBuffer, MemStack};
