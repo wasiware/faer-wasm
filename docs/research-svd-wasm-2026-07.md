@@ -113,6 +113,44 @@ vs the *whole* pipeline, where bidiag is only 1/3 — a far easier bar than
 of the rotation kernel at n≤512 — the one measurement that decides the
 from-scratch build.
 
+## Jacobi probe — built, correct, and KILLED by measurement (2026-07-10)
+
+The sweep-count probe (`kernels/src/svd.rs`, one-sided unpreconditioned
+Jacobi; correct — reconstruction/orthogonality/singular-values gated vs
+faer in `kernels/tests/svd.rs`) settled the decision:
+
+- **Sweeps to convergence** (well-conditioned random, the killer number):
+  12 @ n=128, 13 @ 256, 15 @ 512 — the *pessimistic* end (research said
+  ~6–12 unpreconditioned, ~2–6 preconditioned). At ~7·n³ flops/sweep that
+  is ~8× the flops of faer's whole pipeline.
+- **Runner time vs scipy** (`svd_jacobi` row, run 29065493103):
+  n=256 → 450 ms = **0.2× scipy** (3.2× slower than faer's own SVD);
+  n=512 → 4159 ms = **0.1× scipy** (6.2× slower than faer). Worsens with n.
+- Even fully optimized — norm-caching (~1.4×) + explicit simd128 (~2×) +
+  RRQR preconditioning cutting sweeps ~3× — the ceiling projects to
+  ~faer-parity (0.5–0.8× scipy). A large from-scratch build (preconditioner
+  + sweep kernel) to *maybe match what already exists*. **Rejected.**
+
+## SVD conclusion — near the wasm ceiling; only a modest win available
+
+Both research threads are now measured out:
+- **Tune-bidiag**: caps at ~10–15% of SVD (reduction is only ~30% of cost;
+  GEMV has 3× bandwidth headroom but only on that 30%). Reaches ~parity,
+  not a large win.
+- **Jacobi**: killed (above).
+
+The dominant ~70% (DC-solve + back-transform) is, per the research,
+largely faer gemm at compute peak — which our matmul already runs near.
+So unlike QR (weak opponent + flat kernel = 3×), **SVD has no large wasm
+win available**: faer's SVD is already 0.5–0.8× scipy and rising with n,
+and the structure is gemm-bound at peak. Honest options for the architect:
+(a) squeeze the ~10–15% tune-bidiag win (reaches parity, not "optimization"
+by the architect's bar); (b) a cheap finer back-end profile to *confirm*
+the ~70% is truly gemm-at-peak (the "it's gemm" claim is research, not
+measured — the GEMV surprised us at 33% of bandwidth, so verifying the
+back-end before abandoning is warranted); (c) accept SVD as near-ceiling
+and move to eigvals, where the opponent/headroom may differ.
+
 ## Sources
 LAWN 169/170 (netlib), Drmač–Veselić Part I/II, Demmel–Veselić (SIAM 1992),
 Computing SVD with high relative accuracy (LAA 1999), vectorized Jacobi
