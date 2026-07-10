@@ -220,11 +220,25 @@ alongside the wasm gate.
       flat simd128 loop is so close to gemm rate that routing into gemm
       barely helps below ~512 — the block-apply's value is Hessenberg
       structure reuse, not raw QR speed.
-- [ ] **Wasm-shaped Hessenberg reduction** (`dlahr2`-shape over the
-      block-apply above) — the actual eigen-flank lever; where the
-      2.5–3× eigvals/schur gaps live. Larger job, scope after block-apply.
-- [ ] The eigen flank (lahqr-class kernels): the remaining 2.5–3× gaps
-      live here (eigvals/schur 0.3–0.4× at most sizes).
+- [x] **Focused research: SVD + eig wasm-shaping**
+      (`docs/research-eig-svd-wasm-2026-07.md`, "focused" tier — one
+      agent, ~2 min). Key finding: the eigen flank is dominated by the
+      Householder **reduction** (`dgebrd`/`dsytrd`/`dgehrd`), all the same
+      memory-bound-panel disease our flat kernels win; ~50% level-2 for
+      SVD/sym-eig (flat simd128 GEMV/SYMV is the lever), ~80% level-3 for
+      gen-eig (mostly routing into faer gemm). OpenBLAS optimizes *none*
+      of it → same weak opponent as QR → win-big potential. Back-ends
+      (`bdsqr`/`stedc`/`hseqr`) left alone (`laed3` already gemm-shaped;
+      `lahqr` fix shipped).
+- [ ] **Pivotal pre-build measurement**: does faer's own
+      `gebrd`/`sytrd`/`gehrd` just need param-tuning (faer-schur style) or
+      a flat-panel rebuild? Same fork QR faced. One profiling run +
+      `faer-rs/` read decides tuning-job vs kernel-job. **Do this before
+      building.**
+- [ ] **Eigen-flank kernel(s)** per the research: (1) flat simd128
+      reduction panel + block-apply→gemm — unblocks SVD *and* general-eig;
+      (2) symmetric `symv`/`syr2k` panel — unblocks symmetric eig. Scope
+      after the measurement above.
 - [ ] LU residual at n≥256 (0.8–0.9× vs scipy): next levers per the
       research plan are relaxed-FMA base kernels and packing the panel
       columns; diminishing returns vs the eigen flank.
