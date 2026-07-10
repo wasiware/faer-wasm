@@ -78,6 +78,41 @@ from-scratch RRQR preconditioner + sweep loop + convergence test (LAPACK
 `DGESVJ`/`DGEJSV` are the canonical portable reference; no clean Rust port
 known).
 
+## Runner roofline + phase profile (measured 2026-07-10, run 29064796600)
+
+Architect reframe: optimize toward the machine ceiling, not scipy parity.
+So we located the ceiling and split faer's SVD time (`svd-roofline.mjs`).
+Confirmed on the runner (dev-box preview held qualitatively):
+
+| n | compute peak | bandwidth | GEMV | bidiag / full SVD |
+| - | - | - | - | - |
+| 128 | 5.10 GF/s | 50.6 GB/s | 14.9 GB/s (29% of BW) | 5.2 / 15.8 ms → **33%** |
+| 256 | 5.65 GF/s | 50.0 GB/s | 15.8 GB/s (32%) | 26.7 / 97.1 ms → **27%** |
+| 512 | 5.61 GF/s | 50.5 GB/s | 15.9 GB/s (31%) | 145.7 / 467.0 ms → **31%** |
+
+**Two load-bearing measured facts:**
+1. **Bidiagonalization is only ~30% of SVD wall time** — the DC-solve +
+   vector back-transformation is the other ~70%. (The literature's ">70%
+   reduction" is *singular-values-only*; with vectors the back-end
+   dominates.) So **tuning bidiag caps at ~30% of the cost** — cannot be
+   the optimization endgame.
+2. **The memory-bound GEMV runs at ~30% of STREAM bandwidth** (~16 vs
+   ~50 GB/s) — ~3× headroom, but on a phase that's only ~30% of total, so
+   the realizable SVD win from a bandwidth-optimal GEMV is only ~10–15%.
+
+**Decision consequence:** the dominant ~70% (DC + back-transform) exists
+*only because* we bidiagonalized (the vectors must be un-transformed).
+One-sided Jacobi has neither phase — it works directly on A, U/Σ/V fall
+out of the sweeps — so it structurally avoids the part that dominates
+faer's pipeline. Tune-bidiag is therefore ruled out as the path to the
+optimum; Jacobi is the only lever that attacks the dominant cost. The
+decision now rests solely on **Jacobi's sweep count** (its flop premium
+vs the *whole* pipeline, where bidiag is only 1/3 — a far easier bar than
+"vs the reduction"). Next step: a bare unpreconditioned-Jacobi sweep
+**probe** to measure (a) sweeps-to-convergence and (b) the achieved GF/s
+of the rotation kernel at n≤512 — the one measurement that decides the
+from-scratch build.
+
 ## Sources
 LAWN 169/170 (netlib), Drmač–Veselić Part I/II, Demmel–Veselić (SIAM 1992),
 Computing SVD with high relative accuracy (LAA 1999), vectorized Jacobi
