@@ -330,6 +330,150 @@ pub extern "C" fn run_bidiag_only() -> f64 {
     bid[(0, 0)] + bid[(n - 1, n - 1)]
 }
 
+// --- EVD (eigvals) phase profiling + parameter probes (architect direction
+// 2026-07-10: deep-research the eigen flank; faer eigvals is 0.3-0.4x scipy,
+// the worst ratio in the suite). Known prior: faer's blocked multishift/AED
+// Schur path measured 2-13x SLOWER than its own scalar lahqr on wasm
+// (2026-07-09, schur/src/real.rs recommended_params) while the same
+// algorithm is reference LAPACK's fast path -- these probes locate where
+// the cycles go: Hessenberg vs QR-iteration, per-sweep cost vs sweep count,
+// and whether LAPACK's iparmq-style parameters close the gap. ---
+
+use faer::linalg::evd::hessenberg;
+use faer::linalg::evd::schur::{real_schur, SchurParams};
+
+// faer's Hessenberg reduction ALONE (the front of the eigvals pipeline),
+// mirroring evd_imp's first phase without the Z accumulation (eigenvalues
+// only never forms Z). Timed against run_gen_evd for the phase split.
+#[no_mangle]
+pub extern "C" fn run_hess_only() -> f64 {
+    let s = state();
+    let n = s.a.nrows();
+    let bs = qr_np::recommended_block_size::<f64>(n - 1, n - 1);
+    let mut h = s.a.to_owned();
+    let mut hh = Mat::<f64>::zeros(bs, n - 1);
+    let mut mem = MemBuffer::new(hessenberg::hessenberg_in_place_scratch::<f64>(
+        n,
+        bs,
+        Par::Seq,
+        Default::default(),
+    ));
+    hessenberg::hessenberg_in_place(
+        h.as_mut(),
+        hh.as_mut(),
+        Par::Seq,
+        MemStack::new(&mut mem),
+        Default::default(),
+    );
+    h[(0, 0)] + h[(n - 1, n - 2)]
+}
+
+// LAPACK iparmq-style shift count (ISPEC=15 table, evaluated on the ACTIVE
+// block like dlaqr0 does; usize::ilog2 approximates NINT(LOG2)). faer's
+// default uses the FULL dimension and a different table (32 for n<590 where
+// LAPACK grows to ~n/log2(n)~56 by n=512).
+extern "C" fn shift_count_lapack(_dim: usize, active: usize) -> usize {
+    let nh = Ord::max(active, 4);
+    let ns = if nh < 30 {
+        2
+    } else if nh < 60 {
+        4
+    } else if nh < 150 {
+        10
+    } else if nh < 590 {
+        Ord::max(10, nh / nh.ilog2() as usize)
+    } else if nh < 3000 {
+        64
+    } else if nh < 6000 {
+        128
+    } else {
+        256
+    };
+    Ord::max(2, ns - ns % 2)
+}
+
+// LAPACK iparmq-style AED window (ISPEC=13: NW = NS, 3*NS/2 above n=500).
+extern "C" fn deflation_window_lapack(dim: usize, active: usize) -> usize {
+    let ns = shift_count_lapack(dim, active);
+    if active <= 500 {
+        ns
+    } else {
+        3 * ns / 2
+    }
+}
+
+fn evd_schur_params(blocking: usize, nibble: usize, profile: usize) -> SchurParams {
+    let mut params: SchurParams = Auto::<f64>::auto();
+    if blocking != 0 {
+        params.blocking_threshold = blocking;
+    }
+    if nibble != 0 {
+        params.nibble_threshold = nibble;
+    }
+    if profile == 1 {
+        params.recommended_shift_count = shift_count_lapack;
+        params.recommended_deflation_window = deflation_window_lapack;
+    }
+    params
+}
+
+// Eigenvalues-only pipeline (Hessenberg -> multishift QR, want_t=false,
+// no Z: LAPACK JOB='E' equivalent, same shape as faer's eigenvalues())
+// with caller-controlled SchurParams. 0 = library default per knob;
+// blocking=1<<30 pins every size to the scalar lahqr kernel (the
+// faer-schur wasm recommendation). Returns an eigenvalue probe.
+fn eigvals_tuned_imp(blocking: usize, nibble: usize, profile: usize) -> (f64, usize, usize) {
+    let s = state();
+    let n = s.a.nrows();
+    let params = evd_schur_params(blocking, nibble, profile);
+    let bs = qr_np::recommended_block_size::<f64>(n - 1, n - 1);
+    let mut h = s.a.to_owned();
+    let mut hh = Mat::<f64>::zeros(bs, n - 1);
+    let mut w_re = faer::Col::<f64>::zeros(n);
+    let mut w_im = faer::Col::<f64>::zeros(n);
+    let scratch = faer::dyn_stack::StackReq::any_of(&[
+        hessenberg::hessenberg_in_place_scratch::<f64>(n, bs, Par::Seq, Default::default()),
+        faer::linalg::evd::schur::multishift_qr_scratch::<f64>(n, n, false, false, Par::Seq, params),
+    ]);
+    let mut mem = MemBuffer::new(scratch);
+    let stack = MemStack::new(&mut mem);
+    hessenberg::hessenberg_in_place(h.as_mut(), hh.as_mut(), Par::Seq, stack, Default::default());
+    for j in 0..n {
+        for i in j + 2..n {
+            h[(i, j)] = 0.0;
+        }
+    }
+    let (info, count_aed, count_sweep) = real_schur::multishift_qr::<f64>(
+        false,
+        h.as_mut(),
+        None,
+        w_re.as_mut(),
+        w_im.as_mut(),
+        0,
+        n,
+        Par::Seq,
+        stack,
+        params,
+    );
+    assert!(info == 0, "eigvals did not converge");
+    (w_re[0] + w_im[n - 1], count_aed, count_sweep)
+}
+
+#[no_mangle]
+pub extern "C" fn run_eigvals_tuned(blocking: usize, nibble: usize, profile: usize) -> f64 {
+    eigvals_tuned_imp(blocking, nibble, profile).0
+}
+
+// Iteration-count probe: AED calls and multishift sweeps for one solve,
+// packed as aed*100000 + sweeps. Distinguishes "faer converges slower"
+// (count explosion) from "each sweep is slower" (counts match LAPACK's
+// expectations but wall time doesn't).
+#[no_mangle]
+pub extern "C" fn run_eigvals_counters(blocking: usize, nibble: usize, profile: usize) -> f64 {
+    let (_, count_aed, count_sweep) = eigvals_tuned_imp(blocking, nibble, profile);
+    (count_aed * 100000 + count_sweep) as f64
+}
+
 // STREAM triad over the packed n*n buffers (a += 1.5*b): reads a, reads b,
 // writes a = 24 bytes/elem, memory-bound. GB/s = 24*n*n / time is the
 // achievable-bandwidth roofline anchor at the SVD working-set size.
