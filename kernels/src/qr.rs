@@ -140,7 +140,7 @@ unsafe fn scale_simd128(dst: *mut f64, alpha: f64, len: usize) {
 /// `β = −sign(α)·‖x‖`); the LAPACK small-`β` rescaling path is skipped —
 /// like the LU kernels, this targets the well-conditioned dense regime the
 /// gate exercises, not a general-purpose LAPACK drop-in.
-pub fn qr_factor_in_place(mut a: MatMut<'_, f64>, tau: &mut [f64]) {
+pub fn qr_factor_in_place(a: MatMut<'_, f64>, tau: &mut [f64]) {
 	let m = a.nrows();
 	let n = a.ncols();
 	let k = Ord::min(m, n);

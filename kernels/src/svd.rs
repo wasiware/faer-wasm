@@ -51,8 +51,8 @@ unsafe fn rot_cols(x: *mut f64, y: *mut f64, c: f64, s: f64, m: usize) {
 /// `max_sweeps` caps iteration (well-conditioned inputs converge in a
 /// handful); `tol` is the relative off-diagonal threshold for convergence.
 pub fn jacobi_svd_in_place(
-	mut a: MatMut<'_, f64>,
-	mut v: MatMut<'_, f64>,
+	a: MatMut<'_, f64>,
+	v: MatMut<'_, f64>,
 	s: &mut [f64],
 	max_sweeps: usize,
 	tol: f64,

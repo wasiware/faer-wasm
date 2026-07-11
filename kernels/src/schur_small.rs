@@ -103,7 +103,7 @@ fn householder3(b0: f64, b1: f64, b2: f64) -> (f64, f64, f64, f64) {
 /// Computes the eigenvalues of an upper-Hessenberg `h` in place (contents
 /// destroyed), conjugate pairs adjacent in `w_re`/`w_im`. Returns 0 on
 /// success, or (LAPACK-style) the failing index+1 on non-convergence.
-pub fn hqr_eigvals_in_place(mut h: MatMut<'_, f64>, w_re: &mut [f64], w_im: &mut [f64]) -> isize {
+pub fn hqr_eigvals_in_place(h: MatMut<'_, f64>, w_re: &mut [f64], w_im: &mut [f64]) -> isize {
 	let n = h.nrows();
 	assert!(h.ncols() == n, "square input required");
 	assert!(w_re.len() >= n && w_im.len() >= n);

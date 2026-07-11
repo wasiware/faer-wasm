@@ -31,7 +31,7 @@ use crate::qr::{axpy, dot, scale};
 /// below the first subdiagonal (`dgehrd` storage) with `tau[j]` their
 /// scalars (`k = n-2` reflectors; `tau` needs at least that). `work`
 /// needs at least `n` scratch f64s.
-pub fn hessenberg_factor_in_place(mut a: MatMut<'_, f64>, tau: &mut [f64], work: &mut [f64]) {
+pub fn hessenberg_factor_in_place(a: MatMut<'_, f64>, tau: &mut [f64], work: &mut [f64]) {
 	let n = a.nrows();
 	assert!(a.ncols() == n, "square input required");
 	let k = n.saturating_sub(2);
