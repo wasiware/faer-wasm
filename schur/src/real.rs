@@ -19,21 +19,36 @@ use faer::{Auto, Conj};
 
 pub use faer::linalg::evd::schur::SchurParams;
 
-/// `SchurParams` tuned for the compilation target. The 2026-07-09 "blocked
-/// multishift/AED loses to `lahqr` by 2–13× on wasm" measurement (which
-/// pinned this to `usize::MAX`) was the no_std AED-window bug for n ≥ 150,
-/// fixed by carried `patches/faer-rs/0004`; post-fix the crossover grid
-/// (run 29134291933) has `lahqr` winning through n = 448 (16× at 96 down
-/// to 1.07× at 448) and multishift winning from n = 512 (1.13×). 480
-/// routes every measured winner correctly; re-sweep (`bench/evd-tune.mjs`)
-/// before relying on it beyond n = 512. On other targets this is faer's
+/// The measured wasm multishift-vs-`lahqr` crossover (crossover grid, run
+/// 29134291933, post-patch-0004): `lahqr` wins through n = 448, multishift
+/// from n = 512, for all three pipelines (eigvals real, Schur+Z real,
+/// Schur+Z c64). Used by [`recommended_params`]; re-sweep
+/// (`bench/evd-tune.mjs`) before relying on it beyond n = 512.
+#[cfg(target_arch = "wasm32")]
+pub const WASM_LAHQR_CROSSOVER: usize = 480;
+
+/// `SchurParams` tuned for the compilation target and problem size. The
+/// 2026-07-09 "blocked multishift/AED loses to `lahqr` by 2–13× on wasm"
+/// measurement (which pinned this crate to `lahqr` at every size) was the
+/// no_std AED-window bug for n ≥ 150, fixed by carried
+/// `patches/faer-rs/0004`; post-fix `lahqr` still wins below
+/// [`WASM_LAHQR_CROSSOVER`] and multishift wins above it. The routing must
+/// depend on `n` from OUTSIDE the params: `blocking_threshold` doubles as
+/// `nmin` inside `multishift_qr`, so pinning it to the crossover value
+/// poisons large-n solves (measured 909 vs 805 ms at n=512, pyodide run
+/// 29134642035) — below the crossover we pin `usize::MAX` (pure `lahqr`),
+/// above it we keep faer's default (75) so the multishift machinery runs
+/// with its intended internal `nmin`. On other targets this is faer's
 /// `Auto` default, unchanged.
-pub fn recommended_params() -> SchurParams {
+pub fn recommended_params(n: usize) -> SchurParams {
+	let _ = n;
 	#[allow(unused_mut)]
 	let mut params: SchurParams = Auto::<f64>::auto();
 	#[cfg(target_arch = "wasm32")]
 	{
-		params.blocking_threshold = 480;
+		if n < WASM_LAHQR_CROSSOVER {
+			params.blocking_threshold = usize::MAX;
+		}
 	}
 	params
 }
@@ -173,7 +188,7 @@ pub struct RealSchur {
 pub fn real_schur(a: MatRef<'_, f64>, par: Par) -> Result<RealSchur, SchurError> {
 	let n = a.nrows();
 	assert!(a.ncols() == n);
-	let params = recommended_params();
+	let params = recommended_params(n);
 	let mut t = a.to_owned();
 	let mut z = Mat::zeros(n, n);
 	let mut w_re = Col::zeros(n);
@@ -192,23 +207,11 @@ pub fn real_schur(a: MatRef<'_, f64>, par: Par) -> Result<RealSchur, SchurError>
 	Ok(RealSchur { t, z, w_re, w_im })
 }
 
-/// `SchurParams` for the eigenvalues-only pipeline, tuned for the
-/// compilation target. Post-patch-0004 (the no_std AED-window fix) the
-/// multishift/AED path is repaired and overtakes the scalar `lahqr` kernel
-/// at large n; the fine crossover grid (run 29134291933, n=96..512 in
-/// 64-steps) has lahqr winning through n=448 (9.5× at 96 down to 1.11× at
-/// 448) and multishift winning from n=512 (1.06×). 480 routes every
-/// measured winner correctly; re-sweep (`bench/evd-tune.mjs`) before
-/// relying on it beyond n=512. On non-wasm targets this is faer's `Auto`
-/// default, unchanged.
-pub fn recommended_eigenvalues_params() -> SchurParams {
-	#[allow(unused_mut)]
-	let mut params: SchurParams = Auto::<f64>::auto();
-	#[cfg(target_arch = "wasm32")]
-	{
-		params.blocking_threshold = 480;
-	}
-	params
+/// `SchurParams` for the eigenvalues-only pipeline: same per-`n` routing as
+/// [`recommended_params`] (the eigvals crossover measured identical to the
+/// Schur one — lahqr through 448, multishift from 512, run 29134291933).
+pub fn recommended_eigenvalues_params(n: usize) -> SchurParams {
+	recommended_params(n)
 }
 
 /// scratch space required by [`real_eigenvalues_in_place`]
@@ -302,7 +305,7 @@ pub fn real_eigenvalues(
 ) -> Result<(Col<f64>, Col<f64>), SchurError> {
 	let n = a.nrows();
 	assert!(a.ncols() == n);
-	let params = recommended_eigenvalues_params();
+	let params = recommended_eigenvalues_params(n);
 	let mut h = a.to_owned();
 	let mut w_re = Col::zeros(n);
 	let mut w_im = Col::zeros(n);

@@ -493,7 +493,7 @@ pub extern "C" fn run_hess_wk() -> f64 {
 pub extern "C" fn run_eigvals_hk() -> f64 {
     let s = state();
     let n = s.a.nrows();
-    let params = faer_schur::real::recommended_eigenvalues_params();
+    let params = faer_schur::real::recommended_eigenvalues_params(n);
     let mut h = s.a.to_owned();
     let mut tau = alloc::vec![0.0f64; n.saturating_sub(2).max(1)];
     let mut work = alloc::vec![0.0f64; n];
