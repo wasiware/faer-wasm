@@ -27,6 +27,9 @@ from both ancestors, and that's the point.
 
 ## Contents
 
+- `STATUS.md` — **start here**: the one-page plain-English scoreboard —
+  what we changed in faer (4 patches, ~19 lines), what we ship, how
+  good it is, and the known gaps. Updated every session.
 - `ROADMAP.md` — the phased plan. Phases 0, 1, 3 (the carried fix, CI
   gate, consumer recipe, size budgets, benchmarks + tuning) are done;
   Phase 2 (the LAPACK-parity tail) is underway — Schur + reordering

@@ -69,6 +69,15 @@ docs checked against evidence, the opposite orientation from goal-seeking
 code review. (The 2026-07-08 sweep is the model: it caught a tautological
 test and six stale claims.)
 
+**Coverage rule (Andy, 2026-07-11: "why is there no consistency in our
+testing and benchmarking?").** Every new kernel gets the full treatment
+before its campaign closes: correctness test AND benchmark row, in every
+number type it supports — or an explicit gap line in `STATUS.md` saying
+why not. `STATUS.md` is the one-page plain-English scoreboard (what we
+changed in faer, what we ship, how good it is); update it in the same
+commit as the change it describes, in plain language — it is written for
+the architect to keep the whole project in his head, not for engineers.
+
 ## Working setup
 
 - The upstream clones live at `faer-rs/` and `pulp/` in the repo root
