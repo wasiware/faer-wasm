@@ -294,16 +294,27 @@ c64 twin of `refl3`/`refl2`), which should flip 256 and widen 64–128.
 At 512+ both routes ride faer's complex multishift and our Hessenberg
 front-end wins the difference.
 
-**Runner heterogeneity caveat (real Schur too).** This run landed on a
-faster machine class (suite geomean 1.70× vs 0.93× on run 29155804619
-hours earlier). The real `schur_k` verdicts at the top sizes are
-machine-dependent: n=512 = LOSS 0.66× (machine A, twice) but **WIN
-1.10×** (machine B); n=1024 = LOSS 0.70× (A) vs 0.99× overlap-grade
-loss (B). faer's multishift moves 1.8× across machines where scipy
-moves ~1.1× — the same machine-sensitivity family as the
-blocked-Hessenberg cliff. The 64–256 wins replicate on BOTH machines
-(1.24–1.75×). Honest scoreboard: real Schur wins ≤256 everywhere,
-512/1024 range from 0.66× to 1.10× by machine.
+**CORRECTION — the "machine class" read was wrong; it was the allocator
+fix.** Run 29157035070 (post-fix) vs the earlier runs: scipy's times
+barely moved (its Pyodide allocator was never affected — schur@512
+742→673 ms), while our allocation-heavy rows dropped 1.6–1.8×
+(eigvals_k3@512 586→364 ms, schur_k@512 1121→612 ms, suite geomean
+0.93→1.70×). The leak-only bump allocator was taxing OUR side of every
+large-n comparison — cold pages and `memory.grow` inside the timing
+loop on every faer temp — so all pre-fix verdicts at n ≥ 512
+understated us. **Post-fix scoreboard (run 29157035070, the new
+reference): real `schur_k` WIN 1.24×/1.67×/1.08×/1.10× at n=64–512,
+0.99× range-separated loss at 1024; `eigvals_k3` WIN at ALL five sizes
+incl. 512 (1.52×) and 1024 (1.51×) — the former 512-parity verdict was
+the allocator tax, not the kernel.** Post-fix mode split: T ~7–24%,
+Z ~18–33%, total delta 1.49–1.97× — Z still the dominant lever.
+Re-verification debt recorded on the watch list: every pre-fix
+large-n measurement (incl. the blocked-Hessenberg "machine cliff"
+magnitudes, the 480 crossover, and the LU large-n verdicts) carries
+some allocator tax and should be re-read against post-fix runs before
+being cited; within-run ratios are less contaminated than
+cross-run/cross-build comparisons since both sides of each in-run pair
+paid the same allocator.
 
 **The n=1024 crash that run A exposed** (and run B, post-fix, survived):
 faer's c64 matmul allocates per-call temporaries via GlobalAlloc — one

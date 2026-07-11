@@ -324,13 +324,20 @@ then one global replication-graded tuning pass.
    baseline. The 256 loss is located: our rotation applies are scalar
    while faer's lahqr applies ride pulp SIMD — next lever is a simd128
    complex-rotation primitive (one c64 per lane, the refl3 twin).
-   Fallout finding: faer's c64 matmul allocates per-call temps via
-   GlobalAlloc (15.4 GB cumulative in one n=600 multishift) — OOM'd the
-   leak-only bump allocator at n≥590, fixed by LIFO-rewind in both wasm
-   shims (docs/wasm.md §2), regression-guarded, upstream-ledgered.
-   Caveat now on record for real Schur too: 512/1024 verdicts are
-   machine-dependent (0.66×→1.10× across runner classes for the same
-   binary); 64–256 wins replicate on both machine classes.
+   Fallout finding — the biggest of the campaign: faer's c64 matmul
+   allocates per-call temps via GlobalAlloc (15.4 GB cumulative in one
+   n=600 multishift) — OOM'd the leak-only bump allocator at n≥590;
+   fixed by LIFO-rewind in both wasm shims (docs/wasm.md §2),
+   regression-guarded, upstream-ledgered. The fix then revealed the
+   leak-only allocator had been TAXING every allocation-heavy row on our
+   side of the benchmarks (cold pages + memory.grow in the timing loop;
+   scipy unaffected): post-fix (run 29157035070, the new reference)
+   **real schur_k WINS 1.24×/1.67×/1.08×/1.10× at n=64–512 with 0.99× at
+   1024, and eigvals_k3 WINS at all five sizes incl. 512 (1.52×) and
+   1024 (1.51×)** — the former 512-parity and 512/1024-loss verdicts
+   were allocator tax. Gate baselines re-recorded
+   (`expected-ratios.json`); LU-solve win-guard re-margined 0.6→0.85
+   (part of its old margin was the tax on faer's default).
 2. **Eigenvectors (nonsymmetric `eig`)** — needs Schur first:
    `trevc`-shaped back-substitution on T + back-transform through Z, both
    kernel-shaped; scoreboard row vs `np.linalg.eig`.
@@ -373,7 +380,13 @@ then one global replication-graded tuning pass.
    saves ≤ 12.5% of mults at n ≥ 1024 for O(n²) extra adds/traffic —
    cheap measure-first probe, but it changes the error profile
    (norm-wise, not component-wise backward stable), so if it ever wins
-   it ships as an opt-in path, never the default gemm.
+   it ships as an opt-in path, never the default gemm; **allocator-tax
+   re-verification debt (2026-07-11)**: every large-n number measured
+   before the LIFO-rewind allocator fix (blocked-Hessenberg cliff
+   magnitudes, the 480 crossover, LU large-n verdicts, the pre-fix
+   Pyodide rows) carries leak-allocator tax on the faer side — re-read
+   against post-fix runs before citing; within-run ratios are less
+   contaminated than cross-run comparisons.
 
 ## Considered option — WebGPU for the large-n tail (architect Q, 2026-07-09; deferred)
 

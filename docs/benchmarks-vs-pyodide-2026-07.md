@@ -4,15 +4,18 @@
 > the early "Pyodide wins most of this suite" headline describes Run 1
 > and is long superseded. Current replication-graded state: matmul
 > 4–20× wins (n ≥ 128), QR kernel 2.5–3×, LU-solve 1.4–1.7×, eigvals
-> kernel pipeline wins at n=64/128/256/1024 with parity at 512, an f32
+> kernel pipeline wins at ALL five sizes n=64–1024 (1.51–2.08×; the
+> old 512-parity verdict was leak-allocator tax, see below), an f32
 > column at 2–9× (scipy's s-routines are no faster than its d-routines
-> on wasm), SVD 0.5–0.8× (proven near its wasm ceiling), real Schur via
-> the schur_k kernel pipeline winning 1.24–1.75× at n=64–256 on both
-> measured machine classes, with 512/1024 machine-dependent (0.66× on
-> one runner class, 1.10×/0.99× on another — was 0.2–0.6× everywhere),
-> c64 Schur via the kernel twins winning 1.38×/1.34×/1.10×/1.03× at
-> n=64/128/512/1024 with 0.90× at 256 (was 0.4–0.9×; runs
-> 29146566266/29157035070). See
+> on wasm), SVD 0.9–1.5× post-fix, real Schur via the schur_k kernel
+> pipeline winning 1.08–1.67× at n=64–512 with 0.99× at 1024 (was
+> 0.2–0.6× everywhere), c64 Schur via the kernel twins winning
+> 1.38×/1.34×/1.10×/1.03× at n=64/128/512/1024 with 0.90× at 256 (was
+> 0.4–0.9×). ⚠ All rows BEFORE run 29157035070 (2026-07-11) carry
+> leak-only-bump allocator tax on the faer side (cold pages +
+> memory.grow per temp; scipy's own allocator was unaffected) — the
+> LIFO-rewind allocator fix moved allocation-heavy faer rows 1.6–1.8×;
+> treat 29157035070 as the reference run. See
 > `research-eig-wasm-2026-07.md`, `research-svd-wasm-2026-07.md`, and
 > `research-schur-wasm-2026-07.md` for the current tables and verdicts.
 
