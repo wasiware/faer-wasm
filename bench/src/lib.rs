@@ -529,6 +529,58 @@ pub extern "C" fn run_eigvals_hk() -> f64 {
     w_re[0] + w_im[n - 1]
 }
 
+// The full fix-1+2+3 pipeline: kernel Hessenberg (fix 2) + hand double-shift
+// hqr iteration (fix 3) below the measured 480 crossover (fix 1), repaired
+// faer multishift above it.
+#[no_mangle]
+pub extern "C" fn run_eigvals_k3() -> f64 {
+    let s = state();
+    let n = s.a.nrows();
+    let mut h = s.a.to_owned();
+    let mut tau = alloc::vec![0.0f64; n.saturating_sub(2).max(1)];
+    let mut work = alloc::vec![0.0f64; n];
+    faer_wasm_kernels::hessenberg::hessenberg_factor_in_place(h.as_mut(), &mut tau, &mut work);
+    for j in 0..n {
+        for i in j + 2..n {
+            h[(i, j)] = 0.0;
+        }
+    }
+    if n < 480 {
+        let mut w_re = alloc::vec![0.0f64; n];
+        let mut w_im = alloc::vec![0.0f64; n];
+        let info =
+            faer_wasm_kernels::schur_small::hqr_eigvals_in_place(h.as_mut(), &mut w_re, &mut w_im);
+        assert!(info == 0, "eigvals_k3 (hqr) did not converge");
+        w_re[0] + w_im[n - 1]
+    } else {
+        let params = faer_schur::real::recommended_eigenvalues_params(n);
+        let mut w_re = faer::Col::<f64>::zeros(n);
+        let mut w_im = faer::Col::<f64>::zeros(n);
+        let mut mem = MemBuffer::new(faer::linalg::evd::schur::multishift_qr_scratch::<f64>(
+            n,
+            n,
+            false,
+            false,
+            Par::Seq,
+            params,
+        ));
+        let (info, _, _) = real_schur::multishift_qr::<f64>(
+            false,
+            h.as_mut(),
+            None,
+            w_re.as_mut(),
+            w_im.as_mut(),
+            0,
+            n,
+            Par::Seq,
+            MemStack::new(&mut mem),
+            params,
+        );
+        assert!(info == 0, "eigvals_k3 (multishift) did not converge");
+        w_re[0] + w_im[n - 1]
+    }
+}
+
 // Fix-3 profiling: faer matmul at the multishift sweep's accumulated-update
 // shapes -- C(nb x ib) = U2^T(nb x nb) * A(nb x ib) plus the copy-back the
 // sweep does after every such call. At n=128 the sweep uses nb ~ 24 and

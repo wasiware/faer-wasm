@@ -39,6 +39,7 @@ const OPS = [
 	['eigvals', 'run_gen_evd', null, 'np.linalg.eigvals(a)'],
 	['eigvals_wk', 'run_eigvals_wk', [], 'np.linalg.eigvals(a)'],
 	['eigvals_hk', 'run_eigvals_hk', [], 'np.linalg.eigvals(a)'],
+	['eigvals_k3', 'run_eigvals_k3', [], 'np.linalg.eigvals(a)'],
 	['schur', 'run_schur', null, 'sla.schur(a)'],
 	['matmul_c64', 'run_matmul_c64', null, 'ac @ bc'],
 	['lu_solve_c64', 'run_lu_solve_c64', null, 'np.linalg.solve(ac, rhsc)'],
@@ -163,6 +164,7 @@ const ROUNDS = 5;
 // routing sends it to multishift, and this measures that extrapolation.
 const REP_SIZES = [...SIZES, 1024];
 const REP_OPS = [
+	['eigvals_k3', 'run_eigvals_k3'],
 	['eigvals_hk', 'run_eigvals_hk'],
 	['eigvals_wk', 'run_eigvals_wk'],
 ];
