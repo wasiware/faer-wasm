@@ -191,6 +191,125 @@ pub fn real_schur(a: MatRef<'_, f64>, par: Par) -> Result<RealSchur, SchurError>
 	Ok(RealSchur { t, z, w_re, w_im })
 }
 
+/// `SchurParams` for the eigenvalues-only pipeline, tuned for the
+/// compilation target. Post-patch-0004 (the no_std AED-window fix) the
+/// multishift/AED path is repaired and overtakes the scalar `lahqr` kernel
+/// above a wasm crossover between n=256 and n=512 (lahqr wins 6.4× at 128,
+/// 1.36× at 256; multishift wins 1.61× at 512 — runs 29119237626/29118452323).
+/// The threshold below is PROVISIONAL pending the fine crossover grid
+/// (`bench/evd-tune.mjs`); it routes n≤383 to lahqr, which the coarse data
+/// already supports. On non-wasm targets this is faer's `Auto` default.
+pub fn recommended_eigenvalues_params() -> SchurParams {
+	#[allow(unused_mut)]
+	let mut params: SchurParams = Auto::<f64>::auto();
+	#[cfg(target_arch = "wasm32")]
+	{
+		params.blocking_threshold = 384;
+	}
+	params
+}
+
+/// scratch space required by [`real_eigenvalues_in_place`]
+pub fn real_eigenvalues_scratch(n: usize, par: Par, params: SchurParams) -> StackReq {
+	if n <= 1 {
+		return StackReq::EMPTY;
+	}
+	let bs = recommended_block_size::<f64>(n - 1, n - 1);
+	StackReq::all_of(&[
+		temp_mat_scratch::<f64>(bs, n - 1),
+		StackReq::any_of(&[
+			hessenberg::hessenberg_in_place_scratch::<f64>(n, bs, par, Default::default()),
+			schur::multishift_qr_scratch::<f64>(n, n, false, false, par, params),
+		]),
+	])
+}
+
+/// Computes just the eigenvalues of a general real matrix (LAPACK `dgeev`
+/// with `jobvl=jobvr='N'` / `dhseqr` `JOB='E'` shape): Hessenberg reduction
+/// followed by multishift QR with `want_t = false` and no `Z` — no Schur
+/// form is maintained and no orthogonal factor is accumulated. `h` is
+/// destroyed. Eigenvalues land in `w_re`/`w_im` (a complex-conjugate pair
+/// occupies adjacent entries, exactly as in [`real_schur_in_place`]).
+pub fn real_eigenvalues_in_place(
+	mut h: MatMut<'_, f64>,
+	mut w_re: ColMut<'_, f64>,
+	mut w_im: ColMut<'_, f64>,
+	par: Par,
+	stack: &mut MemStack,
+	params: SchurParams,
+) -> Result<(), SchurError> {
+	let n = h.nrows();
+	assert!(h.ncols() == n);
+	assert!(w_re.nrows() == n);
+	assert!(w_im.nrows() == n);
+	for j in 0..n {
+		for i in 0..n {
+			if !h[(i, j)].is_finite() {
+				return Err(SchurError::NonFinite);
+			}
+		}
+	}
+	if n == 0 {
+		return Ok(());
+	}
+	if n == 1 {
+		w_re[0] = h[(0, 0)];
+		w_im[0] = 0.0;
+		return Ok(());
+	}
+	let bs = recommended_block_size::<f64>(n - 1, n - 1);
+	{
+		let (mut hh, stack) = temp_mat_zeroed::<f64, _, _>(bs, n - 1, &mut *stack);
+		let mut hh = hh.as_mat_mut();
+		hessenberg::hessenberg_in_place(
+			h.rb_mut(),
+			hh.rb_mut(),
+			par,
+			stack,
+			Default::default(),
+		);
+	}
+	for j in 0..n {
+		for i in j + 2..n {
+			h[(i, j)] = 0.0;
+		}
+	}
+	let (info, _, _) = real_schur::multishift_qr::<f64>(
+		false,
+		h.rb_mut(),
+		None,
+		w_re.rb_mut(),
+		w_im.rb_mut(),
+		0,
+		n,
+		par,
+		stack,
+		params,
+	);
+	if info != 0 {
+		return Err(SchurError::NoConvergence);
+	}
+	Ok(())
+}
+
+/// Allocating convenience wrapper around [`real_eigenvalues_in_place`],
+/// using [`recommended_eigenvalues_params`].
+pub fn real_eigenvalues(
+	a: MatRef<'_, f64>,
+	par: Par,
+) -> Result<(Col<f64>, Col<f64>), SchurError> {
+	let n = a.nrows();
+	assert!(a.ncols() == n);
+	let params = recommended_eigenvalues_params();
+	let mut h = a.to_owned();
+	let mut w_re = Col::zeros(n);
+	let mut w_im = Col::zeros(n);
+	let mut buf = MemBuffer::new(real_eigenvalues_scratch(n, par, params));
+	let stack = MemStack::new(&mut buf);
+	real_eigenvalues_in_place(h.as_mut(), w_re.as_mut(), w_im.as_mut(), par, stack, params)?;
+	Ok((w_re, w_im))
+}
+
 /// Moves the diagonal block containing row `ifst` to row `ilst`
 /// (`dtrexc`-equivalent), updating `t` and, if given, the Schur vectors `z`.
 ///

@@ -464,6 +464,17 @@ pub extern "C" fn run_eigvals_tuned(blocking: usize, nibble: usize, profile: usi
     eigvals_tuned_imp(blocking, nibble, profile).0
 }
 
+// The shipping wasm-tuned eigenvalues path: faer-schur's real_eigenvalues
+// (Hessenberg -> multishift QR, want_t=false, no Z) with the measured
+// wasm blocking threshold from recommended_eigenvalues_params().
+#[no_mangle]
+pub extern "C" fn run_eigvals_wk() -> f64 {
+    let s = state();
+    let n = s.a.nrows();
+    let (w_re, w_im) = faer_schur::real::real_eigenvalues(s.a.as_ref(), Par::Seq).unwrap();
+    w_re[0] + w_im[n - 1]
+}
+
 // Iteration-count probe: AED calls and multishift sweeps for one solve,
 // packed as aed*100000 + sweeps. Distinguishes "faer converges slower"
 // (count explosion) from "each sweep is slower" (counts match LAPACK's

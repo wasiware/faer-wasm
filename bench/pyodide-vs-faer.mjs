@@ -37,6 +37,7 @@ const OPS = [
 	['svd', 'run_svd', null, 'np.linalg.svd(a)'],
 	['svd_jacobi', 'run_svd_jacobi', [], 'np.linalg.svd(a)'],
 	['eigvals', 'run_gen_evd', null, 'np.linalg.eigvals(a)'],
+	['eigvals_wk', 'run_eigvals_wk', [], 'np.linalg.eigvals(a)'],
 	['schur', 'run_schur', null, 'sla.schur(a)'],
 	['matmul_c64', 'run_matmul_c64', null, 'ac @ bc'],
 	['lu_solve_c64', 'run_lu_solve_c64', null, 'np.linalg.solve(ac, rhsc)'],

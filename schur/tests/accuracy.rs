@@ -5,7 +5,7 @@
 use faer::prelude::*;
 use faer::Mat;
 use faer_schur::complex::{complex_schur, complex_schur_move, complex_schur_select};
-use faer_schur::real::{real_schur, real_schur_move, real_schur_select};
+use faer_schur::real::{real_eigenvalues, real_schur, real_schur_move, real_schur_select};
 
 const SIZES: &[usize] = &[0, 1, 2, 3, 5, 8, 16, 33, 64, 96, 150];
 
@@ -178,7 +178,13 @@ fn real_schur_factorization_and_eigenvalues() {
         let sc = complex_schur(ac.as_ref(), Par::Seq).unwrap();
         check_complex_factorization(ac.as_ref(), sc.t.as_ref(), sc.z.as_ref(), &ctx);
         let from_c: Vec<_> = (0..n).map(|k| (sc.w[k].re, sc.w[k].im)).collect();
-        assert_eig_sets_match(from_w, from_c, tol, &format!("{ctx} vs complex"));
+        assert_eig_sets_match(from_w.clone(), from_c, tol, &format!("{ctx} vs complex"));
+
+        // the eigenvalues-only driver (want_t=false, no Z) agrees with the
+        // full Schur factorization's eigenvalues
+        let (e_re, e_im) = real_eigenvalues(a.as_ref(), Par::Seq).unwrap();
+        let from_e: Vec<_> = (0..n).map(|k| (e_re[k], e_im[k])).collect();
+        assert_eig_sets_match(from_w, from_e, tol, &format!("{ctx} eigvals-only"));
     }
 }
 
