@@ -161,6 +161,17 @@ simd128), with the O(n³) bulk routed through faer's gemm microkernels
 then QR, then the eigen flank; correctness gated in CI (`kernels/tests`)
 alongside the wasm gate.
 
+**Tuning freeze (architect decision, 2026-07-11).** Shape before tune:
+parameters are only optimal relative to an implementation, so no more
+tuning *campaigns* (sweeps as deliverables) until the full surface
+exists — f32/c32 layer, shaped Schur (+Z kernels), the SVD small-n
+rotation path, both eigenvector functions. Existing thresholds (the 480
+eig crossover, LU trsm base, etc.) remain as *provisional routing
+scaffolding* so builds stay benchmarkable; the known re-tune debts (the
+hqr-vs-multishift crossover at n=512 was measured against the pre-kernel
+lahqr; f32's halved cache footprint moves every threshold) are deferred
+to one global, replication-graded tuning pass at the end.
+
 - [x] **Pyodide Run 2 — crossover sweep to n=512 + tuned rows**: tuned
       QR already beats scipy 1.3–1.7× at *every* size (a packaging
       problem now, not a kernel problem); tuned LU bounded at 0.6–1.3×;
