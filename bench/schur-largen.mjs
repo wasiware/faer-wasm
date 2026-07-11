@@ -42,6 +42,10 @@ for (const n of SIZES) {
 	console.log(JSON.stringify({ target: label, op: 'schur_k', n, ns: Math.round(k) }));
 	const f = await time('run_schur', n);
 	console.log(JSON.stringify({ target: label, op: 'schur_faer', n, ns: Math.round(f) }));
+	const ck = await time('run_schur_c64_k', n);
+	console.log(JSON.stringify({ target: label, op: 'schur_c64_k', n, ns: Math.round(ck) }));
+	const cf = await time('run_schur_c64', n);
+	console.log(JSON.stringify({ target: label, op: 'schur_c64_faer', n, ns: Math.round(cf) }));
 }
 
 console.log('\n# want_t/Z mode split (min-of-2, ms): 0=eigvals 1=+T 2=+Z 3=T+Z');

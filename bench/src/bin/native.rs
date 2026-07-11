@@ -59,5 +59,9 @@ fn main() {
         println!(r#"{{"target":"{label}","op":"schur_k","n":{n},"ns":{ns:.1}}}"#);
         let ns = time_op(|| bench_harness::run_schur(), n);
         println!(r#"{{"target":"{label}","op":"schur_faer","n":{n},"ns":{ns:.1}}}"#);
+        let ns = time_op(|| bench_harness::run_schur_c64_k(), n);
+        println!(r#"{{"target":"{label}","op":"schur_c64_k","n":{n},"ns":{ns:.1}}}"#);
+        let ns = time_op(|| bench_harness::run_schur_c64(), n);
+        println!(r#"{{"target":"{label}","op":"schur_c64_faer","n":{n},"ns":{ns:.1}}}"#);
     }
 }

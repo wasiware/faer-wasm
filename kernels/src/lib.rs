@@ -18,9 +18,12 @@
 #![no_std]
 extern crate alloc;
 
+pub mod cplx;
 pub mod hessenberg;
+pub mod hessenberg_cplx;
 pub mod scalar;
 pub mod schur_small;
+pub mod schur_small_cplx;
 pub mod lu;
 pub mod qr;
 pub mod svd;

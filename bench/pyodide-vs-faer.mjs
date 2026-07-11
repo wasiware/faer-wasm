@@ -43,6 +43,7 @@ const OPS = [
 	['lu_solve_c64', 'run_lu_solve_c64', null, 'np.linalg.solve(ac, rhsc)'],
 	['qr_r_c64', 'run_qr_c64', null, "np.linalg.qr(ac, mode='r')"],
 	['schur_c64', 'run_schur_c64', null, "sla.schur(ac, output='complex')"],
+	['schur_c64_k', 'run_schur_c64_k', [], "sla.schur(ac, output='complex')"],
 	// f32 rows (f32/c32 phase): both sides in single precision — numpy
 	// dispatches the LAPACK s-routines, faer rows ride the generic kernels.
 	['matmul_f32', 'run_matmul_f32', [], 'a32 @ b32'],
@@ -175,6 +176,7 @@ const REP_SIZES = [...SIZES, 1024];
 const REP_OPS = [
 	['eigvals_k3', 'run_eigvals_k3', 'np.linalg.eigvals(a)'],
 	['schur_k', 'run_schur_k', 'sla.schur(a)'],
+	['schur_c64_k', 'run_schur_c64_k', "sla.schur(ac, output='complex')"],
 ];
 const stats = (xs) => {
 	const s = [...xs].sort((x, y) => x - y);
