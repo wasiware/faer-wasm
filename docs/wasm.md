@@ -177,7 +177,11 @@ upstream is still broken fails immediately.
 
 faer's default blocking thresholds are tuned for native caches and
 misfire badly on wasm — mid-size factorizations run up to ~10× slower
-than necessary. Measured fix (details + tables in
+than necessary. (Caveat 2026-07-11: the specific ratios below were
+measured before the LIFO-rewind allocator fix and are pessimistic about
+faer's defaults; the *direction* of the guidance re-verifies on every
+push via `bench/gate.mjs`, but re-measure before quoting the numbers.)
+Measured fix (details + tables in
 `benchmarks-2026-07.md`): **prefer unblocked kernels through n≈256** by
 calling the low-level factor APIs with explicit parameters. The
 high-level solvers (`.partial_piv_lu()`, `.qr()`) use the untuned

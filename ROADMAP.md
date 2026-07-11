@@ -307,9 +307,10 @@ then one global replication-graded tuning pass.
    accumulation — also removes the shipping Schur's exposure to faer's
    blocked-Hessenberg machine cliff); (c) ✅ hqr want_t+Z sibling with
    dlanv2 standardization + fused simd128 `refl3`/`refl2` applies;
-   (d) ✅ replication-gated verdicts: **WIN 1.31×/1.75× at n=64/128,
-   OVERLAP at 256, LOSS 0.66×/0.70× at 512/1024** (was 0.2–0.6× at every
-   size). The projection ("wins probable below n=512") held below the
+   (d) ✅ replication-gated verdicts, post-allocator-fix reference (run
+   29157035070): **WIN 1.24×/1.67×/1.08×/1.10× at n=64–512, 0.99× at
+   1024** (was 0.2–0.6× at every size; the first-run 512/1024 "losses"
+   were the leak-allocator tax, see 1(e)). The projection ("wins probable below n=512") held below the
    crossover; the 512/1024 losses are measured to live in the
    +Z cost of faer's multishift path (our eigvals→Schur delta there is
    1.90–2.05× vs scipy's 1.06–1.30×; below the crossover our delta is

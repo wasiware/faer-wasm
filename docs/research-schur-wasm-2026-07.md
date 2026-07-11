@@ -198,7 +198,7 @@ pass. (d) **Benchmark**: wasm-vs-native + replication-gated vs
 instrumentation of open question 1. (e) **c64 decision** afterward, per
 open question 4.
 
-## The build + runner verdicts (same day, 2026-07-11)
+## The build + runner verdicts (same day, 2026-07-11) — ⚠ tables in this section are PRE-allocator-fix; superseded by the CORRECTION section below
 
 The campaign steps (a)–(d) were built and benchmarked (commit `eb98432`;
 pyodide run 29146566266, wasm gate 29146577830 — both green, smoke
@@ -211,7 +211,8 @@ the Z updates and widened column applies (worth 12–15% end-to-end below
 the crossover on the dev box).
 
 **Replication-gated verdicts vs `scipy.linalg.schur`** (5 alternating
-rounds, claim only on range separation; runner):
+rounds, claim only on range separation; runner — pre-fix, kept as the
+historical record):
 
 | n | scipy med [range] | schur_k med [range] | verdict |
 | - | - | - | - |
@@ -224,8 +225,9 @@ rounds, claim only on range separation; runner):
 Against the shipping `faer-schur` baseline (same run, main grid):
 9.83→1.31 ms @64 (7.5×), 24.9→8.1 @128 (3.1×), 223.8→75.1 @256 (3.0×),
 1561.7→1124.4 @512 (1.39×). The scoreboard arc for Schur: 0.2×/0.4–0.6×
-(baseline) → **1.31×/1.75× wins at 64/128, parity at 256, 0.66×/0.70×
-at 512/1024**. Wasm-vs-native for `schur_k` (dev container, scripted):
+(baseline) → 1.31×/1.75× wins at 64/128, parity at 256, 0.66×/0.70×
+at 512/1024 (pre-fix; the CORRECTION below revises the top sizes to
+1.08×/1.10×/0.99×). Wasm-vs-native for `schur_k` (dev container, scripted):
 1.43×/1.16×/1.10×/1.81×/1.40× at n=64–1024.
 
 **Open question 1 answered (the delta's fraction split, runner):**

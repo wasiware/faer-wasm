@@ -94,6 +94,13 @@ Per the working contract (CLAUDE.md): claims are graded on **strength**
 (by-hand < scripted < CI-enforced < cross-checked), and never above
 their evidence.
 
+> **Allocator note (2026-07-11):** performance rows sourced from runs
+> before 29157035070 were measured on the leak-only bump allocator,
+> which taxed *our* side of every comparison (scipy unaffected) — those
+> rows are conservative, worst at large n and for faer's untuned
+> defaults. Rows contradicted outright by post-fix data are annotated
+> inline; full re-measurement is queued on the ROADMAP watch list.
+
 | claim | strength | durability | evidence |
 | - | - | - | - |
 | faer + carried patch builds for wasm32 (`linalg`, `linalg,std`) | tested | CI-enforced | wasm gate, every push |
@@ -124,12 +131,12 @@ their evidence.
 | recursive QR is contraindicated on wasm (ReLAPACK excludes it; `dgeqrt3` recurses to skinny gemms); the predicted Hessenberg lever was since built (as the flat unblocked kernel, not block-apply) | proven | by-hand | `docs/research-qr-wasm-2026-07.md`; outcome in `research-eig-wasm-2026-07.md` |
 
 | upstream bug 0004 (`no_std` AED window = `log2(n/n)` = 0, 150 ≤ n < 590) root-caused and fixed by carried patch: iteration counts collapse ~50–85× (n=512: 1091 AED/852 sweeps → 26/22) | tested | CI-enforced | `docs/research-eig-wasm-2026-07.md`; counters measured on runner pre/post; patch applied + exact-value gates on every push |
-| eigvals kernel pipeline (`eigvals_k3`: flat Hessenberg + hqr below 480, repaired multishift above) beats scipy 1.75×/2.05×/1.83×/1.24× at n=64/128/256/1024 with separated ranges; n=512 is parity (separated 1 of 3 runs) | observed | scripted | replication gate in `pyodide-vs-faer.mjs` (5 alternating rounds, WIN only on range separation), runs 29137919745 + 29140693223 |
+| eigvals kernel pipeline (`eigvals_k3`: flat Hessenberg + hqr below 480, repaired multishift above) beats scipy at every size — **pre-allocator-fix runs showed n=512 as parity; post-fix it is a separated WIN (1.52×), and 1024 improved 1.24×→1.51×** (the leak-only bump allocator was taxing our side; see the 2026-07-11 allocator row below) | observed | scripted | pre-fix: runs 29137919745 + 29140693223; post-fix reference: run 29157035070 |
 | Hessenberg + hqr kernels correct: ‖AQ−QH‖/‖QᵀQ−I‖/eigenvalue-preservation, and hqr eigenvalues match faer at n=1–256 (+ conjugate-pair/trace invariants) | tested | CI-enforced | `kernels/tests/{hessenberg,schur_small}.rs`, per push |
 | Hessenberg kernel is 3.2×/7.0× faster than faer's blocked reduction at n=512/1024, and faer's blocked path has a machine-sensitive cache cliff (7–95× across runner instances at n=1024) that the kernel avoids | observed | scripted | phase-split probe run 29136868733; cliff cross-checked on 3 machines |
-| full dense SVD has no >1.5× wasm win: threshold knob refuted by sweep (default optimal both directions), Jacobi killed by measurement (12–15 sweeps → 0.1–0.2×), all algorithm replacements refuted or author-conceded; 0.5–0.8× ≈ ceiling | tested | cross-checked | runner sweeps 29070389762/29065493103 + 103-agent adversarial verification (23/25 claims, 3-vote), `docs/research-svd-wasm-2026-07.md` |
+| full dense SVD has no >1.5× wasm win *from further work*: threshold knob refuted by sweep (default optimal both directions), Jacobi killed by measurement (12–15 sweeps → 0.1–0.2×), all algorithm replacements refuted or author-conceded. **The "0.5–0.8× ceiling" figure was pre-allocator-fix; post-fix faer's unchanged SVD measures 0.7–1.5× (win at 512)** — the do-nothing verdict got stronger, the loss framing was stale | tested | cross-checked | runner sweeps 29070389762/29065493103 + 103-agent verification; post-fix numbers run 29157035070 |
 | kernels are generic over `WasmScalar` (f64x2/f32x4); f64 behavior unchanged by the refactor; f32 correctness gated at eps32 tolerances | tested | CI-enforced | exact-value smoke probes unchanged; `kernels/tests/f32.rs` per push |
-| f32 column vs scipy float32: matmul 4.3–9.1× (n ≥ 128; 0.5× at 64 — small-n gemm overhead), LU-solve 2.4–3.0×, QR 3.7–5.1×, eigvals 2.0–4.3× — scipy's s-routines are ≈ no faster than its d-routines on wasm | observed | scripted | run 29140693223, both sides single precision |
+| f32 column vs scipy float32: matmul 1.9–8.1× (the pre-fix "0.5× at 64" was allocator tax, post-fix 1.9×), LU-solve 3.0–3.3×, QR 4.0–5.2×, eigvals 3.0–4.6× — scipy's s-routines are ≈ no faster than its d-routines on wasm (mechanism unchanged) | observed | scripted | pre-fix run 29140693223; post-fix reference run 29157035070 |
 | full-Schur kernel pipeline (Hessenberg + backward-accumulated Q + hqr want_t/Z, dlanv2-standardized) correct: ‖A−ZTZᵀ‖ ~1e-13, orthogonality, standardized quasi-triangular structure, eigenvalues match faer at n=1–256, n=512 multishift composition, f32 twins | tested | CI-enforced | `kernels/tests/schur_full.rs`, per push (gate run 29146577830) |
 | schur_k vs scipy.linalg.schur (post-allocator-fix reference run): WIN 1.24×/1.67×/1.08×/1.10× at n=64–512 (ranges separate), 0.99× loss at 1024; vs the prior faer-schur baseline 7.5×/3.1×/3.0×/1.4× faster at 64–512 | observed | scripted | replication gate in `pyodide-vs-faer.mjs`, run 29157035070 |
 | the eigvals→Schur cost delta on wasm: Z dominates (18–33%), T-widening ~7–24%; total delta 1.49–1.97× vs scipy's 1.06–1.30× — the residual 1024 gap lives in the multishift +Z path | observed | scripted | `run_schur_k_mode` split, run 29157035070; docs/research-schur-wasm-2026-07.md |
