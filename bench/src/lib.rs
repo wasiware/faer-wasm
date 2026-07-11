@@ -793,6 +793,71 @@ pub extern "C" fn run_schur_c64_ms_probe(bt: usize) -> f64 {
     w[0].re
 }
 
+/// f32 full-Schur pipeline (closes the last coverage gap in STATUS.md):
+/// the same generic kernels as run_schur_k at f32, faer's f32 multishift
+/// above the (provisional, freeze-held) 480 crossover. SchurParams is
+/// type-free, so the wasm routing from faer-schur applies as-is.
+#[no_mangle]
+pub extern "C" fn run_schur_k_f32() -> f64 {
+    let s = state();
+    let n = s.a32.nrows();
+    let mut h = s.a32.to_owned();
+    let mut tau = alloc::vec![0.0f32; n.saturating_sub(2).max(1)];
+    let mut work = alloc::vec![0.0f32; n];
+    faer_wasm_kernels::hessenberg::hessenberg_factor_in_place(h.as_mut(), &mut tau, &mut work);
+    let mut z = faer::Mat::<f32>::zeros(n, n);
+    faer_wasm_kernels::hessenberg::hessenberg_form_q(h.as_ref(), &tau, z.as_mut());
+    for j in 0..n {
+        for i in j + 2..n {
+            h[(i, j)] = 0.0;
+        }
+    }
+    if n < 480 {
+        let mut w_re = alloc::vec![0.0f32; n];
+        let mut w_im = alloc::vec![0.0f32; n];
+        let info = faer_wasm_kernels::schur_small::hqr_schur_in_place(
+            h.as_mut(),
+            Some(z.as_mut()),
+            &mut w_re,
+            &mut w_im,
+            true,
+        );
+        assert!(info == 0, "schur_k_f32 (hqr) did not converge");
+        (h[(0, 0)] + z[(n - 1, n - 1)] + w_re[0]) as f64
+    } else {
+        let params = faer_schur::real::recommended_params(n);
+        let mut w_re = faer::Col::<f32>::zeros(n);
+        let mut w_im = faer::Col::<f32>::zeros(n);
+        let mut mem = MemBuffer::new(faer::linalg::evd::schur::multishift_qr_scratch::<f32>(
+            n,
+            n,
+            true,
+            true,
+            Par::Seq,
+            params,
+        ));
+        let (info, _, _) = real_schur::multishift_qr::<f32>(
+            true,
+            h.as_mut(),
+            Some(z.as_mut()),
+            w_re.as_mut(),
+            w_im.as_mut(),
+            0,
+            n,
+            Par::Seq,
+            MemStack::new(&mut mem),
+            params,
+        );
+        assert!(info == 0, "schur_k_f32 (multishift) did not converge");
+        for j in 0..n {
+            for i in j + 2..n {
+                h[(i, j)] = 0.0;
+            }
+        }
+        (h[(0, 0)] + z[(n - 1, n - 1)] + w_re[0]) as f64
+    }
+}
+
 // ---- f32 rows (f32/c32 phase, architect direction 2026-07-11): the four
 // headliners in f32 -- ~2x mechanism pair on wasm SIMD128 (4 lanes for
 // compute-bound, half traffic for bandwidth-bound). matmul rides faer's

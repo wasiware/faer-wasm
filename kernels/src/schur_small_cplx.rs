@@ -12,7 +12,7 @@
 
 use faer::{c64, MatMut};
 
-use crate::cplx::{cabs, cabs1, cmul_real, conj, csqrt, rotg};
+use crate::cplx::{cabs, cabs1, cmul_real, conj, crot_row_pair, crot_streams, csqrt, rotg};
 
 /// eigenvalues of the complex 2×2 [[a00,a01],[a10,a11]] (faer's complex
 /// `lahqr_eig22`: abs1-scaled, principal square root)
@@ -211,48 +211,21 @@ pub fn chqr_schur_in_place(
 					at!(i, i - 1) = r;
 					at!(i + 1, i - 1) = c64::new(0.0, 0.0);
 				}
-				let sc = conj(s);
-
 				// left-apply to rows (i, i+1) over columns i..istop_m:
-				// x' = c·x − conj(s)·y ; y' = s·x + c·y
-				{
-					let mut pj = p.add(i + i * cs_h);
-					let mut j = i;
-					while j < istop_m {
-						let x = *pj;
-						let y = *pj.add(1);
-						*pj = cmul_real(x, c) - sc * y;
-						*pj.add(1) = s * x + cmul_real(y, c);
-						pj = pj.add(cs_h);
-						j += 1;
-					}
-				}
+				// x' = c·x − conj(s)·y ; y' = s·x + c·y — fused simd on the
+				// contiguous row pair, strided across columns
+				crot_row_pair(p.add(i + i * cs_h), cs_h, c, s, istop_m - i);
 				// right-apply (adjoint) to columns (i, i+1) over rows
-				// istart_m..min(i+3, istop): x' = c·x − s·y ; y' = conj(s)·x + c·y
+				// istart_m..min(i+3, istop): x' = c·x − s·y ;
+				// y' = conj(s)·x + c·y — fused simd on two column streams
 				{
 					let c0 = p.add(i * cs_h);
 					let c1 = p.add((i + 1) * cs_h);
 					let jend = Ord::min(i + 3, istop);
-					let mut r = istart_m;
-					while r < jend {
-						let x = *c0.add(r);
-						let y = *c1.add(r);
-						*c0.add(r) = cmul_real(x, c) - s * y;
-						*c1.add(r) = sc * x + cmul_real(y, c);
-						r += 1;
-					}
+					crot_streams(c0.add(istart_m), c1.add(istart_m), c, s, jend - istart_m);
 				}
 				if have_z {
-					let z0 = zp.add(i * cs_z);
-					let z1 = zp.add((i + 1) * cs_z);
-					let mut r = 0usize;
-					while r < n {
-						let x = *z0.add(r);
-						let y = *z1.add(r);
-						*z0.add(r) = cmul_real(x, c) - s * y;
-						*z1.add(r) = sc * x + cmul_real(y, c);
-						r += 1;
-					}
+					crot_streams(zp.add(i * cs_z), zp.add((i + 1) * cs_z), c, s, n);
 				}
 			}
 		}

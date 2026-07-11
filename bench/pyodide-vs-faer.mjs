@@ -50,6 +50,7 @@ const OPS = [
 	['lu_solve_f32', 'run_lu_solve_wk_f32', [], 'np.linalg.solve(a32, rhs32)'],
 	['qr_r_f32', 'run_qr_factor_wk_f32', [], "np.linalg.qr(a32, mode='r')"],
 	['eigvals_f32', 'run_eigvals_k3_f32', [], 'np.linalg.eigvals(a32)'],
+	['schur_f32', 'run_schur_k_f32', [], 'sla.schur(a32)'],
 ];
 
 // ---- faer side (same adaptive min-of-3 protocol as gate.mjs)

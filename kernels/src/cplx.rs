@@ -138,3 +138,106 @@ pub fn rotg(a: c64, b: c64) -> (f64, c64, c64) {
 	// absorbs that: return s_field = −conj(s)
 	(c, -conj(s), r)
 }
+
+// ---------------------------------------------------------------------------
+// SIMD rotation applies (Schur close-out, 2026-07-11). One c64 fills one
+// 128-bit lane, so a complex multiply is a splat/swap/multiply dance rather
+// than a lane-parallel win — but it still halves the instruction count vs
+// scalar (both components move per op), and the measured gap it closes is
+// chqr's rotation applies vs faer's pulp-SIMD ones (the c64@256 loss).
+//
+// Core form (matches `rotg`'s convention; c is real):
+//   x' = c·x − s·y
+//   y' = conj(s)·x + c·y
+// The chase's left-apply (x' = c·x − conj(s)·y ; y' = s·x + c·y) is the same
+// form with `s` replaced by `conj(s)` — the wrappers below handle that.
+
+/// `x' = c·x − s·y ; y' = conj(s)·x + c·y` over `len` elements of two
+/// contiguous c64 streams (the right-apply / Z-apply shape).
+#[inline(always)]
+pub unsafe fn crot_streams(x: *mut c64, y: *mut c64, c: f64, s: c64, len: usize) {
+	#[cfg(target_arch = "wasm32")]
+	{
+		crot_streams_simd(x, y, c, s, len);
+	}
+	#[cfg(not(target_arch = "wasm32"))]
+	{
+		let sc = conj(s);
+		for i in 0..len {
+			let xi = *x.add(i);
+			let yi = *y.add(i);
+			*x.add(i) = cmul_real(xi, c) - s * yi;
+			*y.add(i) = sc * xi + cmul_real(yi, c);
+		}
+	}
+}
+
+/// Left-apply over a strided row pair: elements at `p + j·stride` (x) and
+/// `p + j·stride + 1` (y) for `j in 0..len`; applies
+/// `x' = c·x − conj(s)·y ; y' = s·x + c·y`.
+#[inline(always)]
+pub unsafe fn crot_row_pair(p: *mut c64, stride: usize, c: f64, s: c64, len: usize) {
+	#[cfg(target_arch = "wasm32")]
+	{
+		crot_row_pair_simd(p, stride, c, s, len);
+	}
+	#[cfg(not(target_arch = "wasm32"))]
+	{
+		let sc = conj(s);
+		for j in 0..len {
+			let q = p.add(j * stride);
+			let xi = *q;
+			let yi = *q.add(1);
+			*q = cmul_real(xi, c) - sc * yi;
+			*q.add(1) = s * xi + cmul_real(yi, c);
+		}
+	}
+}
+
+#[cfg(target_arch = "wasm32")]
+#[target_feature(enable = "simd128")]
+unsafe fn crot_streams_simd(x: *mut c64, y: *mut c64, c: f64, s: c64, len: usize) {
+	use core::arch::wasm32::*;
+	// s·z      = s.re·(re,im) + (−s.im·im, s.im·re)
+	// conj(s)·z = s.re·(re,im) + ( s.im·im, −s.im·re)
+	let vc = f64x2_splat(c);
+	let vsre = f64x2_splat(s.re);
+	let vsim_n = f64x2(-s.im, s.im); // for s·z
+	let vsim_p = f64x2(s.im, -s.im); // for conj(s)·z
+	let mut i = 0usize;
+	while i < len {
+		let xv = v128_load(x.add(i) as *const v128);
+		let yv = v128_load(y.add(i) as *const v128);
+		let xsw = i64x2_shuffle::<1, 0>(xv, xv);
+		let ysw = i64x2_shuffle::<1, 0>(yv, yv);
+		let sy = f64x2_add(f64x2_mul(vsre, yv), f64x2_mul(vsim_n, ysw));
+		let scx = f64x2_add(f64x2_mul(vsre, xv), f64x2_mul(vsim_p, xsw));
+		v128_store(x.add(i) as *mut v128, f64x2_sub(f64x2_mul(vc, xv), sy));
+		v128_store(y.add(i) as *mut v128, f64x2_add(scx, f64x2_mul(vc, yv)));
+		i += 1;
+	}
+}
+
+#[cfg(target_arch = "wasm32")]
+#[target_feature(enable = "simd128")]
+unsafe fn crot_row_pair_simd(p: *mut c64, stride: usize, c: f64, s: c64, len: usize) {
+	use core::arch::wasm32::*;
+	// left form = core form with s -> conj(s)
+	let vc = f64x2_splat(c);
+	let vsre = f64x2_splat(s.re);
+	let vsim_n = f64x2(s.im, -s.im); // conj(s)·z
+	let vsim_p = f64x2(-s.im, s.im); // conj(conj(s))·z = s·z
+	let mut j = 0usize;
+	while j < len {
+		let q = p.add(j * stride);
+		let xv = v128_load(q as *const v128);
+		let yv = v128_load(q.add(1) as *const v128);
+		let xsw = i64x2_shuffle::<1, 0>(xv, xv);
+		let ysw = i64x2_shuffle::<1, 0>(yv, yv);
+		let scy = f64x2_add(f64x2_mul(vsre, yv), f64x2_mul(vsim_n, ysw));
+		let sx = f64x2_add(f64x2_mul(vsre, xv), f64x2_mul(vsim_p, xsw));
+		v128_store(q as *mut v128, f64x2_sub(f64x2_mul(vc, xv), scy));
+		v128_store(q.add(1) as *mut v128, f64x2_add(sx, f64x2_mul(vc, yv)));
+		j += 1;
+	}
+}
