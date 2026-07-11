@@ -50,4 +50,14 @@ fn main() {
         let ns = time_op(|| bench_harness::run_qr_factor_tuned(0, 0), n);
         println!(r#"{{"target":"{label}","op":"qr_factor","n":{n},"ns":{ns:.1}}}"#);
     }
+    // Schur campaign rows (2026-07-11): the kernel full-Schur pipeline and
+    // the faer-schur baseline to n=1024 — the native side of
+    // schur-largen.mjs's wasm-vs-native ratio
+    for &n in &[64usize, 128, 256, 512, 1024] {
+        bench_harness::setup(n);
+        let ns = time_op(|| bench_harness::run_schur_k(), n);
+        println!(r#"{{"target":"{label}","op":"schur_k","n":{n},"ns":{ns:.1}}}"#);
+        let ns = time_op(|| bench_harness::run_schur(), n);
+        println!(r#"{{"target":"{label}","op":"schur_faer","n":{n},"ns":{ns:.1}}}"#);
+    }
 }

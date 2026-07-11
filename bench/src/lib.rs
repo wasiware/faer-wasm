@@ -589,6 +589,93 @@ pub extern "C" fn run_eigvals_k3() -> f64 {
     }
 }
 
+// ---- Schur campaign (2026-07-11): the full-Schur kernel pipeline. Kernel
+// Hessenberg (fix 2) + backward-accumulated Q formation + hqr want_t+Z
+// below the 480 crossover; above it, kernel Hessenberg front-end + faer's
+// repaired multishift (want_t, Z seeded with the accumulated Q) — the
+// multishift path also inherits the accumulated-U gemm batching the
+// research identified (docs/research-schur-wasm-2026-07.md), so the
+// benchmark grid directly answers its open question 2.
+fn schur_k_imp(want_t: bool, want_z: bool) -> f64 {
+    let s = state();
+    let n = s.a.nrows();
+    let mut h = s.a.to_owned();
+    let mut tau = alloc::vec![0.0f64; n.saturating_sub(2).max(1)];
+    let mut work = alloc::vec![0.0f64; n];
+    faer_wasm_kernels::hessenberg::hessenberg_factor_in_place(h.as_mut(), &mut tau, &mut work);
+    let mut z = faer::Mat::<f64>::zeros(n, n);
+    if want_z {
+        faer_wasm_kernels::hessenberg::hessenberg_form_q(h.as_ref(), &tau, z.as_mut());
+    }
+    for j in 0..n {
+        for i in j + 2..n {
+            h[(i, j)] = 0.0;
+        }
+    }
+    if n < 480 {
+        let mut w_re = alloc::vec![0.0f64; n];
+        let mut w_im = alloc::vec![0.0f64; n];
+        let info = faer_wasm_kernels::schur_small::hqr_schur_in_place(
+            h.as_mut(),
+            if want_z { Some(z.as_mut()) } else { None },
+            &mut w_re,
+            &mut w_im,
+            want_t,
+        );
+        assert!(info == 0, "schur_k (hqr) did not converge");
+        h[(0, 0)] + if want_z { z[(n - 1, n - 1)] } else { 0.0 } + w_re[0]
+    } else {
+        let params = faer_schur::real::recommended_params(n);
+        let mut w_re = faer::Col::<f64>::zeros(n);
+        let mut w_im = faer::Col::<f64>::zeros(n);
+        let mut mem = MemBuffer::new(faer::linalg::evd::schur::multishift_qr_scratch::<f64>(
+            n,
+            n,
+            want_t,
+            want_z,
+            Par::Seq,
+            params,
+        ));
+        let (info, _, _) = real_schur::multishift_qr::<f64>(
+            want_t,
+            h.as_mut(),
+            if want_z { Some(z.as_mut()) } else { None },
+            w_re.as_mut(),
+            w_im.as_mut(),
+            0,
+            n,
+            Par::Seq,
+            MemStack::new(&mut mem),
+            params,
+        );
+        assert!(info == 0, "schur_k (multishift) did not converge");
+        // faer's blocked path leaves workspace junk below the subdiagonal
+        // (faer-schur zeroes it too); include the cleanup in the timed cost
+        if want_t {
+            for j in 0..n {
+                for i in j + 2..n {
+                    h[(i, j)] = 0.0;
+                }
+            }
+        }
+        h[(0, 0)] + if want_z { z[(n - 1, n - 1)] } else { 0.0 } + w_re[0]
+    }
+}
+
+/// The shipping full-Schur pipeline: T + Z.
+#[no_mangle]
+pub extern "C" fn run_schur_k() -> f64 {
+    schur_k_imp(true, true)
+}
+
+/// Instrumentation toggles for the eigvals→Schur cost split (research open
+/// question 1): mode 0 = eigvals-only (baseline), 1 = +want_t, 2 = +Z
+/// (with Q formation), 3 = both (== run_schur_k).
+#[no_mangle]
+pub extern "C" fn run_schur_k_mode(mode: usize) -> f64 {
+    schur_k_imp(mode & 1 != 0, mode & 2 != 0)
+}
+
 // ---- f32 rows (f32/c32 phase, architect direction 2026-07-11): the four
 // headliners in f32 -- ~2x mechanism pair on wasm SIMD128 (4 lanes for
 // compute-bound, half traffic for bandwidth-bound). matmul rides faer's

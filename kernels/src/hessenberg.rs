@@ -114,3 +114,63 @@ pub fn hessenberg_factor_in_place<T: WasmScalar>(
 		}
 	}
 }
+
+/// Forms the orthogonal `Q` of the Hessenberg reduction from the reflectors
+/// stored by [`hessenberg_factor_in_place`] (`dorghr`-shape).
+///
+/// `a` is the factored storage (reflector tails below the first
+/// subdiagonal), `tau` the reflector scalars; `q` (n×n) is overwritten with
+/// `Q = H_0·H_1···H_{k-1}` such that `A_orig = Q·H·Qᵀ`.
+///
+/// Backward accumulation (research open question 3, settled by flop count +
+/// the 5/5 flat-loop precedent): applying the sequence back-to-front means
+/// reflector `j` only touches columns `j+1..n`, and columns `0..j+1` remain
+/// identity — ~4/3·n³ flops total (vs ~2n³ forward), all in the same
+/// contiguous-column `dot`/`axpy` shape as the reduction itself. No
+/// compact-WY, no T-matrix, no gemm.
+pub fn hessenberg_form_q<T: WasmScalar>(a: faer::MatRef<'_, T>, tau: &[T], q: MatMut<'_, T>) {
+	let n = a.nrows();
+	assert!(a.ncols() == n, "square input required");
+	assert!(q.nrows() == n && q.ncols() == n, "q must be n×n");
+	let k = n.saturating_sub(2);
+	assert!(tau.len() >= k, "tau must hold n-2 scalars");
+	assert!(a.row_stride() == 1, "column-major with unit row stride required");
+	assert!(q.row_stride() == 1, "q: column-major with unit row stride required");
+	let acs = a.col_stride() as usize;
+	let qcs = q.col_stride() as usize;
+	let ap = a.as_ptr();
+	let qp = q.as_ptr_mut();
+
+	unsafe {
+		// Q = I
+		for c in 0..n {
+			let col = qp.add(c * qcs);
+			for r in 0..n {
+				*col.add(r) = if r == c { T::ONE } else { T::ZERO };
+			}
+		}
+		// apply H_j from the left, back to front; H_j's vector v_j lives in
+		// a[(j+2.., j)] with implicit v[0] = 1 at row j+1
+		for j in (0..k).rev() {
+			let tj = tau[j];
+			if tj == T::ZERO {
+				continue;
+			}
+			let v = ap.add(j * acs); // column j of the factored storage
+			let tail = n - j - 2; // stored tail length
+			for c in j + 1..n {
+				let qc = qp.add(c * qcs);
+				// s = τ_j · (v_jᵀ · Q[j+1.., c])
+				let mut s = *qc.add(j + 1);
+				if tail > 0 {
+					s += T::dot(v.add(j + 2), qc.add(j + 2), tail);
+				}
+				s *= tj;
+				*qc.add(j + 1) -= s;
+				if tail > 0 {
+					T::axpy(qc.add(j + 2), v.add(j + 2), s, tail);
+				}
+			}
+		}
+	}
+}
