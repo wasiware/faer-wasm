@@ -444,6 +444,7 @@ the submission template.
 | blocked multishift QR leaves workspace junk below the subdiagonal of `T` (faer's own EVD never reads it; anyone consuming `T` directly gets garbage) | bug report candidate | found 2026-07-08 building `faer-schur`, which zeroes it; accuracy tests |
 | dead code: `real_schur.rs:837` `if true \|\|` disables the recursive-multishift AED branch — possibly intentional, worth asking | question upstream | source diff vs LAPACK, research-eig-wasm-2026-07.md |
 | blocked Hessenberg has a machine-sensitive cache cliff (7–95× slower than an unblocked kernel at n=1024 across runner instances) | perf report candidate | phase-split probe run 29136868733, cross-checked on 3 machines |
+| complex `JacobiRotation::rotg(a, b)` returns `r = 1` when `b == 0` (LAPACK `zlartg` returns `r = a`); the complex `lahqr` chase writes that `r` over the subdiagonal — wrong output for the measure-zero input class where a bulge entry is exactly 0 | bug report candidate | source reading during the c64 kernel port (our port uses LAPACK semantics); not yet reproduced with a concrete input |
 
 ## Boundary note — what does NOT live in this repo
 
