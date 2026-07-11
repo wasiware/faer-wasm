@@ -325,6 +325,35 @@ gemm shaping (documented above), unpursued for now. The wk diagnostic row
 at 1024 again showed faer's blocked-Hessenberg machine cliff (64 s on
 this runner instance) — shipping paths avoid it.
 
+## Post-sweep replication runs — n=512 downgraded to parity
+
+Later gate runs (29140693223 and after) re-confirm the 64/128/256/1024
+wins (1.77× / 2.05× / 1.83× / 1.24×, ranges separate every time) but
+n=512 has now OVERLAPPED twice after separating once (1.04× → 1.02×/
+overlap). Honest status: **n=512 is parity, not a win** — it separated
+in one run of three. Its lever remains the multishift sweep gemm
+shaping + the frozen hqr-vs-multishift crossover re-sweep (global tuning
+pass).
+
+The same run carried the first f32 column (both sides single precision;
+scipy dispatches its s-routines):
+
+| op (f32) | n=64 | 128 | 256 | 512 |
+| - | - | - | - | - |
+| matmul | 0.5× | 4.3× | 4.5× | **9.1×** |
+| lu_solve | 2.4× | 2.6× | 3.0× | 2.9× |
+| qr_r | 3.7× | 4.0× | 4.7× | **5.1×** |
+| eigvals | 3.0× | 3.4× | 4.3× | 2.0× |
+
+The amplification has a clean mechanism: scipy's s-routines are
+essentially NO faster than its d-routines on wasm (its f32 QR: 78.9 ms
+vs f64's 78.7; f32 eigvals 556 vs 554 — generic-C loops don't widen,
+only memory halves), while our f32 kernels collect both lanes and
+bandwidth (internal f32-over-f64: QR 1.8×, LU-solve 2.1×, eigvals 1.9×
+at 512). Practical upshot: the incumbent has no usable fast single
+precision on wasm; ours is a 2–9× column. (matmul_f32@64 = 0.5× is the
+known weak faer f32 gemm at small n — watch-list item.)
+
 ## Status / next
 
 - [x] Patch 0004 minted, round-trip verified (`git apply` clean on
