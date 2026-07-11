@@ -300,19 +300,25 @@ then one global replication-graded tuning pass.
    zlahqr — watch-list note); Kressner LAWN 171 block reordering is a
    real serial lever (up to 4×, sourced-unverified) if reordering shows
    up hot; c64's small kernel (zlahqr) is single-shift 2×1 — a different
-   cost model than real. Steps: (a) Add Schur real+c64 to the
-   replication gate incl. n=1024 — baseline to standard (current
-   informal: ~0.4–0.6× scipy).
-   (b) Z-accumulating Hessenberg: extend the kernel to form/apply Q from
-   its stored reflectors (the reconstruction code shape already exists in
-   the test suite); this also removes the shipping Schur's exposure to
-   faer's blocked-Hessenberg machine cliff. (c) Z-accumulating iteration:
-   the hqr kernel's `want_t=true` + Z sibling — Z updates are contiguous
-   3-column axpys, friendlier than the eigvals shapes. (d) Benchmark each
-   step. (e) Decision point: c64 kernel twins (a NEW build — no complex
-   hand kernels exist at either precision). Projection from measured
-   structure: parity very likely, wins probable below n=512 (scipy pays
-   1.26× to go eigvals→Schur; faer currently pays 2.6×).
+   cost model than real. Steps (a)–(d) **built and benchmarked same day**
+   (commit `eb98432`, run 29146566266; full record in the research doc):
+   (a) ✅ schur_k rows in the replication gate incl. n=1024; (b) ✅
+   Z-accumulating Hessenberg (`hessenberg_form_q`, dorghr-shape backward
+   accumulation — also removes the shipping Schur's exposure to faer's
+   blocked-Hessenberg machine cliff); (c) ✅ hqr want_t+Z sibling with
+   dlanv2 standardization + fused simd128 `refl3`/`refl2` applies;
+   (d) ✅ replication-gated verdicts: **WIN 1.31×/1.75× at n=64/128,
+   OVERLAP at 256, LOSS 0.66×/0.70× at 512/1024** (was 0.2–0.6× at every
+   size). The projection ("wins probable below n=512") held below the
+   crossover; the 512/1024 losses are measured to live in the
+   +Z cost of faer's multishift path (our eigvals→Schur delta there is
+   1.90–2.05× vs scipy's 1.06–1.30×; below the crossover our delta is
+   LAPACK-grade 1.50–1.61×). Next levers recorded in the research doc:
+   hand hqr+Z past 480 (re-tune debt, frozen), wasm-shaped multishift
+   Z-accumulation, or a 0004-class profile of faer's want_t/Z internals.
+   (e) Decision point, open: c64 kernel twins (a NEW build — no complex
+   hand kernels exist at either precision; zlahqr is single-shift 2×1,
+   c64 Schur currently 0.4–0.9× across sizes).
 2. **Eigenvectors (nonsymmetric `eig`)** — needs Schur first:
    `trevc`-shaped back-substitution on T + back-transform through Z, both
    kernel-shaped; scoreboard row vs `np.linalg.eig`.

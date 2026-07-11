@@ -6,9 +6,12 @@
 > 4–20× wins (n ≥ 128), QR kernel 2.5–3×, LU-solve 1.4–1.7×, eigvals
 > kernel pipeline wins at n=64/128/256/1024 with parity at 512, an f32
 > column at 2–9× (scipy's s-routines are no faster than its d-routines
-> on wasm), SVD 0.5–0.8× (proven near its wasm ceiling), Schur 0.4–0.7×
-> (campaign queued). See `research-eig-wasm-2026-07.md` and
-> `research-svd-wasm-2026-07.md` for the current tables and verdicts.
+> on wasm), SVD 0.5–0.8× (proven near its wasm ceiling), real Schur via
+> the schur_k kernel pipeline winning 1.31×/1.75× at n=64/128 with
+> parity at 256 and 0.66×/0.70× at 512/1024 (was 0.2–0.6× everywhere;
+> run 29146566266), c64 Schur 0.4–0.9× (kernel twins undecided). See
+> `research-eig-wasm-2026-07.md`, `research-svd-wasm-2026-07.md`, and
+> `research-schur-wasm-2026-07.md` for the current tables and verdicts.
 
 The first external head-to-head, per the architect's benchmark direction:
 the same problems solved by the incumbent scientific-computing-on-wasm

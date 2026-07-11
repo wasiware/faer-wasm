@@ -198,6 +198,69 @@ pass. (d) **Benchmark**: wasm-vs-native + replication-gated vs
 instrumentation of open question 1. (e) **c64 decision** afterward, per
 open question 4.
 
+## The build + runner verdicts (same day, 2026-07-11)
+
+The campaign steps (a)–(d) were built and benchmarked (commit `eb98432`;
+pyodide run 29146566266, wasm gate 29146577830 — both green, smoke
+probes bit-unchanged). `schur_k` = kernel Hessenberg →
+backward-accumulated Q (`hessenberg_form_q`) → hand `hqr` want_t+Z with
+`dlanv2` standardization below the (frozen, provisional) 480 crossover;
+kernel-Hessenberg front-end + faer's repaired multishift (want_t, Z
+seeded with Q) above it. Fused simd128 `refl3`/`refl2` primitives carry
+the Z updates and widened column applies (worth 12–15% end-to-end below
+the crossover on the dev box).
+
+**Replication-gated verdicts vs `scipy.linalg.schur`** (5 alternating
+rounds, claim only on range separation; runner):
+
+| n | scipy med [range] | schur_k med [range] | verdict |
+| - | - | - | - |
+| 64 | 1.73 [1.72..1.74] | 1.32 [1.31..1.42] | **WIN 1.31×** |
+| 128 | 14.52 [14.49..14.77] | 8.32 [8.17..8.57] | **WIN 1.75×** |
+| 256 | 94.47 [94.46..95.95] | 89.66 [75.48..96.67] | OVERLAP 1.05× — no claim |
+| 512 | 741.7 [740.9..742.8] | 1121.3 [1088..1135] | **LOSS 0.66×** |
+| 1024 | 3601.2 [3598..3610] | 5120.4 [5102..5161] | **LOSS 0.70×** |
+
+Against the shipping `faer-schur` baseline (same run, main grid):
+9.83→1.31 ms @64 (7.5×), 24.9→8.1 @128 (3.1×), 223.8→75.1 @256 (3.0×),
+1561.7→1124.4 @512 (1.39×). The scoreboard arc for Schur: 0.2×/0.4–0.6×
+(baseline) → **1.31×/1.75× wins at 64/128, parity at 256, 0.66×/0.70×
+at 512/1024**. Wasm-vs-native for `schur_k` (dev container, scripted):
+1.43×/1.16×/1.10×/1.81×/1.40× at n=64–1024.
+
+**Open question 1 answered (the delta's fraction split, runner):**
+
+| n | eigvals | +T | +Z | T+Z | T share | Z share | total delta |
+| -: | -: | -: | -: | -: | -: | -: | -: |
+| 64 | 0.88 | 1.00 | 1.21 | 1.32 | 9% | 25% | 1.50× |
+| 128 | 5.06 | 5.93 | 7.36 | 8.14 | 11% | 28% | 1.61× |
+| 256 | 46.77 | 71.39 | 55.11 | 74.38 | 33%* | 11%* | 1.59× |
+| 512 | 567.9 | 678.6 | 972.6 | 1079.6 | 10% | 37% | 1.90× |
+| 1024 | 2527.0 | 2989.3 | 4682.6 | 5191.4 | 9% | 42% | 2.05× |
+
+(*n=256 is min-of-2 with the same wide spread the replication row shows
+— treat the 256 split as noisy.) **Z is the dominant delta cost and
+grows with n**; T-widening is ~10%.
+
+**Open question 2 partially answered.** Above the crossover the pipeline
+rides faer's accumulated multishift (the KACC22-style path), and its
+measured eigvals→Schur delta is **1.90–2.05×** — while scipy's reference
+`dhseqr` on the same machine pays only 1.06–1.30× (1.73/1.63 @64 …
+3601/3145 @1024). So LAPACK's accumulation discipline is NOT being
+matched by faer's implementation of the same idea on wasm: at n=512 our
++Z alone costs ~405 ms (form_q ≈ 60–80 ms of it) where scipy's *entire*
+T+Z+Q-formation delta is ~149 ms. The 512/1024 losses live exactly
+there. Candidate levers, in evidence order: (i) route Z through our own
+machinery — extend the hand `hqr`+Z past 480 (the 480 crossover was
+measured against pre-kernel pipelines and never for the Schur+Z shapes;
+known re-tune debt, frozen until the global pass); (ii) a wasm-shaped
+Z-accumulation for the multishift sweep (the research's U-GEMM question,
+now with a measured target); (iii) profile faer's want_t/Z multishift
+internals for the same class of no_std/routing landmine that 0004 was.
+Below the crossover the flat want_t/Z applies already deliver
+LAPACK-grade deltas (1.50–1.61×) against reference dlahqr-class costs —
+and the wins.
+
 ## Sources
 
 Reference-LAPACK master via GitHub raw (dlaqr0/dlaqr5/zlaqr0/zlaqr5/
