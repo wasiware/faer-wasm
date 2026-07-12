@@ -328,6 +328,48 @@ the zero-import pattern used; fixed by a 3-line LIFO-rewind in `dealloc`
 guarded by the alloc_probe peak-live assertion, ledgered upstream (also
 a no_std perf hazard: 25K allocations per solve).
 
+## Close-out (2026-07-12): crot verdict, f32 row, and the runner-drift rule
+
+The campaign's last build half (commit `6c3fb49`) delivered the
+predicted simd128 complex-rotation primitive (`kernels/cplx.rs`
+`crot_streams`/`crot_row_pair`, one c64 per 128-bit lane) wired into
+`chqr`'s three apply loops, plus the f32 Schur benchmark row.
+
+**The cross-run reading was a trap.** The next pyodide-bench run
+(29172715791) read c64@256 as 0.90×→**0.76×** — the crot change
+apparently a 17% regression at exactly its target size. But rows whose
+code did not change between the runs drifted the same direction:
+`schur_k`@256 81.9→93.6 ms, `eigvals_k3`@256 42.2→48.7 ms (7–15% on
+identical binaries; scipy's side moved ~7% too). CI hands out a
+different machine each run. **Cross-run ratios cannot judge a code
+change; only within-run, interleaved comparisons count.** That rule now
+has a tool: `bench/ab-crot.mjs` builds two variants and times them
+alternating on one machine, with an untouched op as a same-machine
+control row.
+
+**Same-machine verdicts** (run 29173699093 on a CI runner; control
+`schur_k` read 0.99–1.00× OVERLAP at all sizes, validating the method):
+
+| n | crot med [range] ms | scalar med [range] ms | verdict |
+| - | - | - | - |
+| 64 | 3.32 [3.30..3.67] | 3.92 [3.91..4.61] | **crot WINS 1.18×** |
+| 128 | 23.23 [23.00..24.54] | 27.25 [27.15..27.66] | **crot WINS 1.17×** |
+| 256 | 376.4 [306.2..378.2] | 315.5 [309.9..329.6] | OVERLAP — no claim |
+
+At 256 the machine itself was noisy (the *control* swung 17–23% within
+rounds there), so no claim either way; a second same-machine A/B in the
+dev container separated cleanly in crot's favor at 256 (292.8 [286..307]
+vs 367.5 [363..375], **1.25×**, median of 5). **Decision: keep crot** —
+it wins 1.17–1.25× everywhere measurement separates and never
+measurably loses. The RQ4 prediction half-held: it widened 64/128 as
+predicted; it did not flip 256 — c64@256 stays the campaign's one
+recorded residual vs scipy (0.76–0.90× depending on the machine drawn).
+
+**f32 Schur row** (run 29172715791 main grid, closing the coverage
+gap): 1.7× / 2.5× / 2.2× / 1.1× at n=64/128/256/512 vs
+`scipy.linalg.schur(a32)` — the same shapes that win at f64 win at f32,
+consistent with the R-ratio account (both sides of R scale together).
+
 ## Sources
 
 Reference-LAPACK master via GitHub raw (dlaqr0/dlaqr5/zlaqr0/zlaqr5/

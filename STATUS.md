@@ -51,7 +51,7 @@ running in the browser engine. Numbers >1 mean we're faster.
 | operation | works? | tested? | benchmarked? | vs scipy |
 | - | - | - | - | - |
 | multiply, LU, QR, SVD, eigen | ✓ (faer's, unmodified) | ✓ | ✓ | mixed: matmul 4–5×, QR 2–4×, LU ~1× |
-| Schur | ✓ our kernel (new today) | ✓ | ✓ | 1.0–1.4× faster, except 0.9× at n=256 |
+| Schur | ✓ our kernel + SIMD rotations | ✓ | ✓ | 1.0–1.6× faster, except ~0.8–0.9× at n=256 |
 
 ### Single precision, complex (c32)
 
@@ -61,9 +61,12 @@ scoped job — queued behind the packaging decision.
 
 ## 3. Known gaps and next levers (for the architect to pick from)
 
-- **complex Schur at n=256** — still behind scipy there. We built the
-  SIMD rotation fix for it; same-machine measurement of the fix is in
-  flight (see §benchmark honesty below).
+- **complex Schur at n=256** — the one remaining loss (0.8–0.9×
+  depending on which machine CI hands us). We built the SIMD rotation
+  fix for it; measured fairly (same machine, alternating), it makes our
+  kernel 1.2× faster at small sizes and never measurably hurts, so we
+  kept it — but it didn't flip 256. Whatever scipy does better there is
+  not yet located; parked as the campaign's recorded residual.
 - **real Schur at n=1024** — a tie, not a win; the remaining cost is in
   faer's large-size path, levers documented in the research doc.
 - **re-check old numbers** — on 2026-07-11 we found our old benchmark

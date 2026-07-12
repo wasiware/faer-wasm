@@ -339,6 +339,17 @@ then one global replication-graded tuning pass.
    were allocator tax. Gate baselines re-recorded
    (`expected-ratios.json`); LU-solve win-guard re-margined 0.6→0.85
    (part of its old margin was the tax on faer's default).
+   (f) ✅ **campaign closed 2026-07-12** (commit `6c3fb49` + doc pass):
+   the predicted simd128 complex-rotation primitive built and wired
+   (`crot_streams`/`crot_row_pair`); f32 Schur row lands 1.7–2.5× to
+   256, 1.1× at 512. crot judged by same-machine A/B
+   (`bench/ab-crot.mjs`, with an untouched-op control row) after the
+   cross-run reading proved untrustworthy — CI machines drift 7–15% on
+   identical binaries — and KEPT: 1.17–1.25× wherever measurement
+   separates, never a measured loss. It did not flip c64@256, which
+   closes as the campaign's one recorded residual (0.76–0.90× vs scipy,
+   machine-dependent; mechanism not yet located). Full close-out in the
+   research doc.
 2. **Eigenvectors (nonsymmetric `eig`)** — needs Schur first:
    `trevc`-shaped back-substitution on T + back-transform through Z, both
    kernel-shaped; scoreboard row vs `np.linalg.eig`.
