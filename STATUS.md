@@ -53,8 +53,8 @@ running in the browser engine. Numbers >1 mean we're faster.
 | operation | works? | tested? | benchmarked? | vs scipy |
 | - | - | - | - | - |
 | multiply, LU, QR, SVD, eigen | ✓ (faer's, unmodified) | ✓ | ✓ | mixed: matmul 4–5×, QR 2–4×, LU ~1× |
-| Schur | ✓ our kernel + SIMD rotations | ✓ | ✓ | 1.0–1.6× faster, except ~0.8–0.9× at n=256 |
-| eigenvectors (full eig) | **✗ — gap** | — | — | needs the complex twin of the new eigenvector kernel; scoped, not built |
+| Schur | ✓ our kernel + SIMD rotations | ✓ | ✓ | ~parity: verdicts at single sizes flip with the CI machine (0.9–1.6×) |
+| eigenvectors (full eig) | ✓ our kernel (new 07-12) | ✓ | ✓ | 2.1–3.2× faster, all sizes — the widest margins in the project |
 
 ### Single precision, complex (c32)
 
@@ -64,12 +64,12 @@ scoped job — queued behind the packaging decision.
 
 ## 3. Known gaps and next levers (for the architect to pick from)
 
-- **complex Schur at n=256** — the one remaining loss (0.8–0.9×
-  depending on which machine CI hands us). We built the SIMD rotation
-  fix for it; measured fairly (same machine, alternating), it makes our
-  kernel 1.2× faster at small sizes and never measurably hurts, so we
-  kept it — but it didn't flip 256. Whatever scipy does better there is
-  not yet located; parked as the campaign's recorded residual.
+- **Schur near parity at larger sizes** — Schur rows with margins under
+  ~1.3× flip between win and loss depending on which machine CI hands
+  us (complex Schur at 256 read 0.89× on two machines and 1.21× on a
+  third; real Schur at 512 read 1.10× and 0.95×). The honest claim is
+  "about even". Rows with margins of 1.4× and up — all of LU/QR/
+  matmul/eigenvalues/eig — replicate on every machine.
 - **real Schur at n=1024** — a tie, not a win; the remaining cost is in
   faer's large-size path, levers documented in the research doc.
 - **re-check old numbers** — on 2026-07-11 we found our old benchmark

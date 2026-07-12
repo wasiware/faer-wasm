@@ -360,9 +360,15 @@ then one global replication-graded tuning pass.
    sizes, ranges separate — 1.80×/2.00×/1.79×/1.55×/1.64× at
    n=64–1024**; f32 row 2.9–4.4×. Wins at 1024 despite schur_k's 0.99×
    there: our eigenvector step costs ~300 ms over Schur at 1024 where
-   scipy's dtrevc3+balancing tail costs ~2.7 s. Remaining twin: **c64
-   eig** (ztrevc-shape; simpler — complex T is truly triangular, no
-   2×2 blocks) — recorded as a STATUS gap, next scoped job.
+   scipy's dtrevc3+balancing tail costs ~2.7 s. **c64 twin built same
+   day** (commit `459205e`, verdicts run 29177564170): `ctrevc` — one
+   guarded complex division per step (no 2×2 blocks), SIMD `caxpy`/
+   `cscale_re` streams, same triangular back-transform. **WIN at all
+   five sizes, 3.24×/2.78×/2.61×/2.18×/2.11× at n=64–1024 — the widest
+   replicated margins in the project.** That run also minted the
+   verdict-stability rule: sub-1.3×-margin rows flip WIN/LOSS with the
+   CI machine drawn (c64 Schur@256 read 0.89×/0.89×/1.21× across three
+   machines); ≥1.4× margins replicate everywhere.
 3. **SVD small-n rotation path** — profile how much of faer's small-n SVD
    (its worst losses: 0.2× @64, 0.4–0.5× @128) sits in the scalar
    `qr_algorithm` rotation application; if large, reuse the rotation
