@@ -1,5 +1,15 @@
 # faer wasm-vs-native benchmarks — 2026-07
 
+> **Status note (2026-07-11):** every number in this file predates the
+> LIFO-rewind allocator fix (commit 6880b5a). The old leak-only bump
+> allocator taxed allocation-heavy ops on the wasm side (cold pages +
+> `memory.grow` inside the timing loop), so the wasm-vs-native ratios
+> here are pessimistic — worst for faer's untuned default paths and the
+> eigen pipelines. Within-file comparisons remain valid (both sides of
+> each pair paid the same tax); cross-referencing these absolute ratios
+> against post-fix runs is not. Re-measurement is queued on the ROADMAP
+> watch list.
+
 First measured answer to "how fast is faer on wasm, and which build knobs
 matter". Produced by `bench/` (see §Method); regenerate any time — these
 numbers are a snapshot, not a guarantee.

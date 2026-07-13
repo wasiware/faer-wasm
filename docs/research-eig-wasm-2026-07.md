@@ -1,5 +1,14 @@
 # Eigvals (nonsymmetric EVD) wasm research — 2026-07-10
 
+> **Status note (2026-07-11):** this is the campaign's chronological
+> record; its run tables predate the LIFO-rewind allocator fix, which
+> was later measured to have taxed our side of every large-n row
+> (docs/research-schur-wasm-2026-07.md, "CORRECTION"). The bug analyses,
+> iteration counts, and within-run comparisons stand; the absolute
+> vs-scipy verdicts are superseded by post-fix runs — current reference:
+> eigvals_k3 WINS at all five sizes incl. 512 (1.52×) and 1024 (1.51×),
+> run 29157035070.
+
 Architect direction: deep-research eigvals for speed and correctness on
 wasm. faer's `eigenvalues()` measured **0.3–0.4× scipy** — the worst ratio
 in the suite. Two tracks ran in parallel: the adversarially-verified

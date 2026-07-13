@@ -17,12 +17,15 @@ pulp already ships a complete wasm backend (`Simd128` + `RelaxedSimd` with
 real `f64x2.mul` / `relaxed_madd` in the output. The `rayon` feature does not
 build on wasm (`atomic-wait` has no port); `Par::Seq` is first-class.
 
-**Prime directive: keep the carry thin.** Strategy settled 2026-07-08:
-nothing is submitted upstream (Andy's decision — do not revisit
-unprompted). We vendor the minimum patch set against a pinned upstream
-base, re-verify on every faer release, and drop patches the moment a
-release doesn't need them. New capability is built *alongside* faer
-(companion crates / consumer shim over public APIs), not inside it.
+**Prime directive: keep the carry thin.** Upstreaming is de-prioritized,
+not forbidden (Andy, 2026-07-11, revising the 2026-07-08 "nothing goes
+upstream"): nothing is submitted now, but upstream-worthy findings are
+tracked in the **upstream ledger** below and the question reopens when
+the project settles toward completeness. We vendor the minimum patch set
+against a pinned upstream base, re-verify on every faer release, and
+drop patches the moment a release doesn't need them. New capability is
+built *alongside* faer (companion crates / consumer shim over public
+APIs), not inside it.
 
 ## Phase 0 — Carry the enabler ✅ (maintenance mode)
 
@@ -259,9 +262,9 @@ to one global, replication-graded tuning pass at the end.
       over `WasmScalar` (f64x2/f32x4), f64 bit-unchanged, f32 gates green;
       runner f32 column vs scipy float32: matmul 4.3–9.1× (n≥128),
       LU-solve 2.4–3.0×, QR 3.7–5.1×, eigvals 2.0–4.3× — scipy's
-      s-routines measure no faster than its d-routines on wasm. c32/c64
-      hand kernels remain future work (no complex kernels at either
-      precision yet).
+      s-routines measure no faster than its d-routines on wasm. c32 hand
+      kernels remain future work; c64 kernels landed in the later Schur
+      and eigenvector campaigns (Phase 2 items 1(e) and 2).
 - [ ] LU residual at n≥256 (0.8–0.9× vs scipy): next levers per the
       research plan are relaxed-FMA base kernels and packing the panel
       columns; diminishing returns vs the eigen flank.
@@ -285,21 +288,87 @@ items below, with the **tuning freeze** in force until all of them exist,
 then one global replication-graded tuning pass.
 
 1. **Schur campaign** (the first advanced function; mirrors the eigvals
-   playbook). (a) Add Schur real+c64 to the replication gate incl.
-   n=1024 — baseline to standard (current informal: ~0.4–0.6× scipy).
-   (b) Z-accumulating Hessenberg: extend the kernel to form/apply Q from
-   its stored reflectors (the reconstruction code shape already exists in
-   the test suite); this also removes the shipping Schur's exposure to
-   faer's blocked-Hessenberg machine cliff. (c) Z-accumulating iteration:
-   the hqr kernel's `want_t=true` + Z sibling — Z updates are contiguous
-   3-column axpys, friendlier than the eigvals shapes. (d) Benchmark each
-   step. (e) Decision point: c64 kernel twins (a NEW build — no complex
-   hand kernels exist at either precision). Projection from measured
-   structure: parity very likely, wins probable below n=512 (scipy pays
-   1.26× to go eigvals→Schur; faer currently pays 2.6×).
-2. **Eigenvectors (nonsymmetric `eig`)** — needs Schur first:
-   `trevc`-shaped back-substitution on T + back-transform through Z, both
-   kernel-shaped; scoreboard row vs `np.linalg.eig`.
+   playbook). **Deep research done 2026-07-11**
+   (`docs/research-schur-wasm-2026-07.md`, 21/25 claims 3-vote
+   confirmed): the eigvals→Schur delta is exactly want_t range-widening
+   + Z updates; LAPACK holds it to ~1.26× via accumulated-U gemm
+   batching (inner dim only 2·NS ≈ 32–128 — whether that pays at our
+   gemm≈2×-flat regime is THE open measurement); the opponent runs
+   verbatim reference-netlib for the whole Schur path (same soft bar as
+   QR); no serial post-2015 replacement exists (StarNEig =
+   concurrency-only, the QDWH-trap analog; RQR beat only unblocked
+   zlahqr — watch-list note); Kressner LAWN 171 block reordering is a
+   real serial lever (up to 4×, sourced-unverified) if reordering shows
+   up hot; c64's small kernel (zlahqr) is single-shift 2×1 — a different
+   cost model than real. Steps (a)–(d) **built and benchmarked same day**
+   (commit `eb98432`, run 29146566266; full record in the research doc):
+   (a) ✅ schur_k rows in the replication gate incl. n=1024; (b) ✅
+   Z-accumulating Hessenberg (`hessenberg_form_q`, dorghr-shape backward
+   accumulation — also removes the shipping Schur's exposure to faer's
+   blocked-Hessenberg machine cliff); (c) ✅ hqr want_t+Z sibling with
+   dlanv2 standardization + fused simd128 `refl3`/`refl2` applies;
+   (d) ✅ replication-gated verdicts, post-allocator-fix reference (run
+   29157035070): **WIN 1.24×/1.67×/1.08×/1.10× at n=64–512, 0.99× at
+   1024** (was 0.2–0.6× at every size; the first-run 512/1024 "losses"
+   were the leak-allocator tax, see 1(e)). The projection ("wins probable below n=512") held below the
+   crossover; the 512/1024 losses are measured to live in the
+   +Z cost of faer's multishift path (our eigvals→Schur delta there is
+   1.90–2.05× vs scipy's 1.06–1.30×; below the crossover our delta is
+   LAPACK-grade 1.50–1.61×). Next levers recorded in the research doc:
+   hand hqr+Z past 480 (re-tune debt, frozen), wasm-shaped multishift
+   Z-accumulation, or a 0004-class profile of faer's want_t/Z internals.
+   (e) ✅ c64 kernel twins built same day (architect go): complex
+   Hessenberg + backward-accumulated Q + Givens-based single-shift chqr
+   (want_t/Z), flat scalar complex loops. Replication verdicts vs scipy
+   complex Schur (run 29157035070): **WIN 1.38×/1.34× at 64/128, LOSS
+   0.90× at 256, WIN 1.10×/1.03× at 512/1024** — from the 0.4–0.9×
+   baseline. The 256 loss is located: our rotation applies are scalar
+   while faer's lahqr applies ride pulp SIMD — next lever is a simd128
+   complex-rotation primitive (one c64 per lane, the refl3 twin).
+   Fallout finding — the biggest of the campaign: faer's c64 matmul
+   allocates per-call temps via GlobalAlloc (15.4 GB cumulative in one
+   n=600 multishift) — OOM'd the leak-only bump allocator at n≥590;
+   fixed by LIFO-rewind in both wasm shims (docs/wasm.md §2),
+   regression-guarded, upstream-ledgered. The fix then revealed the
+   leak-only allocator had been TAXING every allocation-heavy row on our
+   side of the benchmarks (cold pages + memory.grow in the timing loop;
+   scipy unaffected): post-fix (run 29157035070, the new reference)
+   **real schur_k WINS 1.24×/1.67×/1.08×/1.10× at n=64–512 with 0.99× at
+   1024, and eigvals_k3 WINS at all five sizes incl. 512 (1.52×) and
+   1024 (1.51×)** — the former 512-parity and 512/1024-loss verdicts
+   were allocator tax. Gate baselines re-recorded
+   (`expected-ratios.json`); LU-solve win-guard re-margined 0.6→0.85
+   (part of its old margin was the tax on faer's default).
+   (f) ✅ **campaign closed 2026-07-12** (commit `6c3fb49` + doc pass):
+   the predicted simd128 complex-rotation primitive built and wired
+   (`crot_streams`/`crot_row_pair`); f32 Schur row lands 1.7–2.5× to
+   256, 1.1× at 512. crot judged by same-machine A/B
+   (`bench/ab-crot.mjs`, with an untouched-op control row) after the
+   cross-run reading proved untrustworthy — CI machines drift 7–15% on
+   identical binaries — and KEPT: 1.17–1.25× wherever measurement
+   separates, never a measured loss. It did not flip c64@256, which
+   closes as the campaign's one recorded residual (0.76–0.90× vs scipy,
+   machine-dependent; mechanism not yet located). Full close-out in the
+   research doc.
+2. ✅ **Eigenvectors (nonsymmetric `eig`)** — built and closed 2026-07-12
+   (commit `62c95d1`, verdicts run 29175738677). `kernels/eigvec`:
+   dtrevc3-shaped back-substitution on T (dlaln2/dladiv guards ported)
+   + one *triangular* matmul back-transform through Z (X is exactly
+   upper triangular in dtrevc3's packing, so faer's blocked triangular
+   multiply does the gemm bulk with no zero-half waste). Generic
+   f64/f32. Replication verdicts vs `np.linalg.eig`: **WIN at all five
+   sizes, ranges separate — 1.80×/2.00×/1.79×/1.55×/1.64× at
+   n=64–1024**; f32 row 2.9–4.4×. Wins at 1024 despite schur_k's 0.99×
+   there: our eigenvector step costs ~300 ms over Schur at 1024 where
+   scipy's dtrevc3+balancing tail costs ~2.7 s. **c64 twin built same
+   day** (commit `459205e`, verdicts run 29177564170): `ctrevc` — one
+   guarded complex division per step (no 2×2 blocks), SIMD `caxpy`/
+   `cscale_re` streams, same triangular back-transform. **WIN at all
+   five sizes, 3.24×/2.78×/2.61×/2.18×/2.11× at n=64–1024 — the widest
+   replicated margins in the project.** That run also minted the
+   verdict-stability rule: sub-1.3×-margin rows flip WIN/LOSS with the
+   CI machine drawn (c64 Schur@256 read 0.89×/0.89×/1.21× across three
+   machines); ≥1.4× margins replicate everywhere.
 3. **SVD small-n rotation path** — profile how much of faer's small-n SVD
    (its worst losses: 0.2× @64, 0.4–0.5× @128) sits in the scalar
    `qr_algorithm` rotation application; if large, reuse the rotation
@@ -326,7 +395,26 @@ then one global replication-graded tuning pass.
    (8 lanes, revisit when engines ship it); Demmel serial block-Jacobi
    Part Two (the one live SVD research thread); each upstream faer
    release re-evaluated per the release policy (0004 especially — drop
-   the patch if upstream fixes the no_std window).
+   the patch if upstream fixes the no_std window); **the 2025–26
+   fast-matmul wave** (architect flag 2026-07-11, recorded unmeasured):
+   AlphaEvolve's 4×4-in-48-mults (May 2025) has been rationalized to
+   real/rational coefficients (arXiv 2506.13242 / 2602.13171 /
+   2603.18699), flip-graph search improved the known rank for 207 small
+   formats ≤ 16×16×16 (arXiv 2606.02480, June 2026), and
+   alternative-basis Strassen (Numerische Mathematik, 2026) attains the
+   optimal leading coefficient *with* Strassen-class error bounds.
+   Candidate large-n matmul lever only: a 1-level
+   alternative-basis/Strassen–Winograd wrapper over faer-gemm blocks
+   saves ≤ 12.5% of mults at n ≥ 1024 for O(n²) extra adds/traffic —
+   cheap measure-first probe, but it changes the error profile
+   (norm-wise, not component-wise backward stable), so if it ever wins
+   it ships as an opt-in path, never the default gemm; **allocator-tax
+   re-verification debt (2026-07-11)**: every large-n number measured
+   before the LIFO-rewind allocator fix (blocked-Hessenberg cliff
+   magnitudes, the 480 crossover, LU large-n verdicts, the pre-fix
+   Pyodide rows) carries leak-allocator tax on the faer side — re-read
+   against post-fix runs before citing; within-run ratios are less
+   contaminated than cross-run comparisons.
 
 ## Considered option — WebGPU for the large-n tail (architect Q, 2026-07-09; deferred)
 
@@ -388,6 +476,29 @@ unless the architect raises it.
 atomics) justify more. If demand appears: a `Par` backend over wasm threads
 without `atomic-wait` (busy-wait or `memory.atomic.wait32` where available).
 Not needed for any current consumer; keep as a recorded non-goal until it is.
+
+## Upstream ledger (started 2026-07-11 — de-prioritized, not forbidden)
+
+Everything found so far that would plausibly help upstream, recorded as
+discovered per the revised prime directive. Nothing here is being
+prepared for submission yet; when the project settles, the architect
+picks from this list. Canonical target is Codeberg
+(`codeberg.org/sarah-quinones/faer` — GitHub is a mirror); the archived
+`upstream/` package (fix + regression tests + wasm CI job for 0001) is
+the submission template.
+
+| finding | kind | evidence |
+| - | - | - |
+| `patches/faer-rs/0001`: `(n >> 32)` on 32-bit `usize` is a compile error — faer does not build on ANY 32-bit target (wasm32, armv7, i686) | build fix, 4 lines | ready-made package archived in `upstream/`; CI-verified every push |
+| `patches/pulp/0003`: wasm `RelaxedSimd` complex `mul_add_e`/`mul_e` pass NEON accumulator-first FMA args to accumulator-last `relaxed_madd` — ALL c32/c64 compute wrong under `+relaxed-simd` | correctness fix, 4 lines | root-caused 2026-07-08; `schur_probe_cplx == 3` CI guard; docs/wasm.md §4 |
+| `patches/faer-rs/0004`: `no_std` AED deflation window computes `log2(n/n)` = 0 instead of `n/log2(n)` — eigensolver iterations explode ~50–85× for 150 ≤ n < 590 on every `no_std` build | perf fix, 1 line | iteration counters pre/post on runner; docs/research-eig-wasm-2026-07.md |
+| `patches/faer-rs/0002`: Schur kernels are `pub(crate)` — better framed upstream as a feature request (public Schur API + `trexc`/`trsen` reordering, the `faer-schur` shape) than as the raw visibility patch | API gap | `schur/` crate implements the shape; accuracy CI-tested |
+| latent 64-bit bug: `operator/*` splits `n` into u32 halves then recombines as `n0 as f64 + n1 as f64` without scaling `n1` by 2³² — looks wrong for n ≥ 2³² (intent UNCERTAIN) | bug report candidate | research-faer-wasm-2026-07.md §8, source reading only |
+| blocked multishift QR leaves workspace junk below the subdiagonal of `T` (faer's own EVD never reads it; anyone consuming `T` directly gets garbage) | bug report candidate | found 2026-07-08 building `faer-schur`, which zeroes it; accuracy tests |
+| dead code: `real_schur.rs:837` `if true \|\|` disables the recursive-multishift AED branch — possibly intentional, worth asking | question upstream | source diff vs LAPACK, research-eig-wasm-2026-07.md |
+| blocked Hessenberg has a machine-sensitive cache cliff (7–95× slower than an unblocked kernel at n=1024 across runner instances) | perf report candidate | phase-split probe run 29136868733, cross-checked on 3 machines |
+| complex `JacobiRotation::rotg(a, b)` returns `r = 1` when `b == 0` (LAPACK `zlartg` returns `r = a`); the complex `lahqr` chase writes that `r` over the subdiagonal — wrong output for the measure-zero input class where a bulge entry is exactly 0 | bug report candidate | source reading during the c64 kernel port (our port uses LAPACK semantics); not yet reproduced with a concrete input |
+| c64 matmul allocates per-call temporaries via GlobalAlloc (f64 path doesn't): one c64 multishift call at n=600 = 15.4 GB cumulative / ~25K allocations, peak live ~19 MB — a `no_std` perf hazard (25K allocs per solve) and fatal on allocator-less/arena wasm patterns; also, the complex AED recurses into `multishift_qr` where the real path dead-codes that branch (`if true \|\|`) — an intentional(?) real/complex asymmetry | perf/no_std report candidate | counting-allocator probe `kernels/tests/alloc_probe.rs`, 2026-07-11; wasm OOM reproduced + fixed by LIFO-rewind shim |
 
 ## Boundary note — what does NOT live in this repo
 

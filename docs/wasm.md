@@ -50,9 +50,22 @@ Feature facts (all verified):
 
 For a module that instantiates with an empty import object (no JS glue,
 no wasm-bindgen), see `smoke-test/src/lib.rs`: `crate-type = ["cdylib"]`,
-`#![no_std]`, a leak-only bump allocator over `memory.grow` seeded from
-`__heap_base`, and a `panic_handler` that hits `unreachable`. The produced
-module needs zero imports:
+`#![no_std]`, a **LIFO-rewind** bump allocator over `memory.grow` seeded
+from `__heap_base`, and a `panic_handler` that hits `unreachable`. The
+produced module needs zero imports:
+
+**⚠ Do not use a leak-only bump allocator** (the pattern this repo
+recommended before 2026-07-11). faer's **c64 matmul allocates per-call
+temporaries through the global allocator** (its f64 path doesn't): one
+c64 multishift-Schur call at n=600 was measured at **15.4 GB cumulative
+across ~25K allocations** — peak *live* memory only ~19 MB, so any
+freeing allocator is fine, but a leak-only bump hits the 4 GB wasm32
+ceiling inside a single call and the next allocation returns null →
+`memory access out of bounds`. The fix is three lines in `dealloc`
+(rewind the bump pointer when the freed block is the most recent
+allocation — faer's temporaries are nested, so nearly all of the traffic
+reclaims); the guard that this stays sufficient is
+`kernels/tests/alloc_probe.rs`.
 
 ```js
 const { instance } = await WebAssembly.instantiate(bytes, {});
@@ -164,7 +177,11 @@ upstream is still broken fails immediately.
 
 faer's default blocking thresholds are tuned for native caches and
 misfire badly on wasm — mid-size factorizations run up to ~10× slower
-than necessary. Measured fix (details + tables in
+than necessary. (Caveat 2026-07-11: the specific ratios below were
+measured before the LIFO-rewind allocator fix and are pessimistic about
+faer's defaults; the *direction* of the guidance re-verifies on every
+push via `bench/gate.mjs`, but re-measure before quoting the numbers.)
+Measured fix (details + tables in
 `benchmarks-2026-07.md`): **prefer unblocked kernels through n≈256** by
 calling the low-level factor APIs with explicit parameters. The
 high-level solvers (`.partial_piv_lu()`, `.qr()`) use the untuned
@@ -206,9 +223,11 @@ live *outside* `SchurParams` — `blocking_threshold` doubles as `nmin`
 inside the solver). faer's own `.eigenvalues()` takes no params; on wasm
 prefer `faer-schur::real::real_eigenvalues` (eigenvalues-only pipeline)
 or, fastest measured, the `faer-wasm-kernels` Hessenberg + `hqr`
-pipeline (replication-gated wins over scipy at n=64–256 and 1024,
-parity at 512). Tables in `research-eig-wasm-2026-07.md`; the parameters
-are provisional pending the global tuning pass (ROADMAP tuning freeze).
+pipeline (replication-gated wins over scipy at all five sizes n=64–1024;
+the old "parity at 512" verdict was leak-allocator tax on our side —
+post-fix it is a separated 1.52× win, run 29157035070). Tables in
+`research-eig-wasm-2026-07.md`; the parameters are provisional pending
+the global tuning pass (ROADMAP tuning freeze).
 
 ## 8. Schur decomposition + eigenvalue reordering (`faer-schur`)
 

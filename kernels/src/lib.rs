@@ -13,14 +13,21 @@
 //! routed through `faer::linalg::matmul`. Reference LAPACK caps out on its
 //! slow dgemm; these kernels inherit our fast one.
 //!
-//! `no_std`; f64, column-major with unit row stride (asserted).
+//! `no_std`; column-major with unit row stride (asserted). Real kernels
+//! are generic over f64/f32 ([`scalar::WasmScalar`]); complex kernels are
+//! c64-typed.
 
 #![no_std]
 extern crate alloc;
 
+pub mod cplx;
+pub mod eigvec;
+pub mod eigvec_cplx;
 pub mod hessenberg;
+pub mod hessenberg_cplx;
 pub mod scalar;
 pub mod schur_small;
+pub mod schur_small_cplx;
 pub mod lu;
 pub mod qr;
 pub mod svd;

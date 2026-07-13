@@ -38,16 +38,24 @@ const OPS = [
 	['eigvals', 'run_gen_evd', null, 'np.linalg.eigvals(a)'],
 	['eigvals_k3', 'run_eigvals_k3', [], 'np.linalg.eigvals(a)'],
 	['schur', 'run_schur', null, 'sla.schur(a)'],
+	['schur_k', 'run_schur_k', [], 'sla.schur(a)'],
 	['matmul_c64', 'run_matmul_c64', null, 'ac @ bc'],
 	['lu_solve_c64', 'run_lu_solve_c64', null, 'np.linalg.solve(ac, rhsc)'],
 	['qr_r_c64', 'run_qr_c64', null, "np.linalg.qr(ac, mode='r')"],
 	['schur_c64', 'run_schur_c64', null, "sla.schur(ac, output='complex')"],
+	['schur_c64_k', 'run_schur_c64_k', [], "sla.schur(ac, output='complex')"],
+	// eigenvector campaign (2026-07-12): full eig (values + right vectors)
+	['eig', 'run_eig', [], 'np.linalg.eig(a)'],
+	['eig_k', 'run_eig_k', [], 'np.linalg.eig(a)'],
+	['eig_c64_k', 'run_eig_c64_k', [], 'np.linalg.eig(ac)'],
 	// f32 rows (f32/c32 phase): both sides in single precision — numpy
 	// dispatches the LAPACK s-routines, faer rows ride the generic kernels.
 	['matmul_f32', 'run_matmul_f32', [], 'a32 @ b32'],
 	['lu_solve_f32', 'run_lu_solve_wk_f32', [], 'np.linalg.solve(a32, rhs32)'],
 	['qr_r_f32', 'run_qr_factor_wk_f32', [], "np.linalg.qr(a32, mode='r')"],
 	['eigvals_f32', 'run_eigvals_k3_f32', [], 'np.linalg.eigvals(a32)'],
+	['schur_f32', 'run_schur_k_f32', [], 'sla.schur(a32)'],
+	['eig_f32', 'run_eig_k_f32', [], 'np.linalg.eig(a32)'],
 ];
 
 // ---- faer side (same adaptive min-of-3 protocol as gate.mjs)
@@ -170,26 +178,33 @@ const ROUNDS = 5;
 // 1024 exceeds the measured crossover grid (which stopped at 512) — the
 // routing sends it to multishift, and this measures that extrapolation.
 const REP_SIZES = [...SIZES, 1024];
-const REP_OPS = [['eigvals_k3', 'run_eigvals_k3']];
+// each entry races its own scipy call: [key, faer export, python body]
+const REP_OPS = [
+	['eigvals_k3', 'run_eigvals_k3', 'np.linalg.eigvals(a)'],
+	['schur_k', 'run_schur_k', 'sla.schur(a)'],
+	['schur_c64_k', 'run_schur_c64_k', "sla.schur(ac, output='complex')"],
+	['eig_k', 'run_eig_k', 'np.linalg.eig(a)'],
+	['eig_c64_k', 'run_eig_c64_k', 'np.linalg.eig(ac)'],
+];
 const stats = (xs) => {
 	const s = [...xs].sort((x, y) => x - y);
 	return { min: s[0], med: s[Math.floor(s.length / 2)], max: s[s.length - 1] };
 };
 const fmtR = (r) => `${r.med.toFixed(2)} [${r.min.toFixed(2)}..${r.max.toFixed(2)}]`;
-console.log(`\n## eig replication gate (${ROUNDS} alternating rounds, median [min..max] ms)`);
+console.log(`\n## replication gate (${ROUNDS} alternating rounds, median [min..max] ms)`);
 for (const n of REP_SIZES) {
 	await py.runPythonAsync(`setup(${n})`);
 	const faer = Object.fromEntries(REP_OPS.map(([k]) => [k, []]));
-	const scipyMs = [];
+	const scipy = Object.fromEntries(REP_OPS.map(([k]) => [k, []]));
 	for (let r = 0; r < ROUNDS; r++) {
-		for (const [key, exp] of REP_OPS) {
+		for (const [key, exp, pyBody] of REP_OPS) {
 			faer[key].push((await timeFaerOnce(exp, n)) / 1e6);
+			scipy[key].push((await py.runPythonAsync(`bench(lambda: ${pyBody}, reps=1)`)) / 1e6);
 		}
-		scipyMs.push((await py.runPythonAsync('bench(lambda: np.linalg.eigvals(a), reps=1)')) / 1e6);
 	}
-	const sc = stats(scipyMs);
-	console.log(`\nn=${n}: scipy eigvals ${fmtR(sc)}`);
-	for (const [key] of REP_OPS) {
+	console.log(`\nn=${n}:`);
+	for (const [key, , pyBody] of REP_OPS) {
+		const sc = stats(scipy[key]);
 		const st = stats(faer[key]);
 		const verdict =
 			st.max < sc.min
@@ -197,17 +212,40 @@ for (const n of REP_SIZES) {
 				: st.min > sc.max
 					? `LOSS (ranges separate, ${(sc.med / st.med).toFixed(2)}x)`
 					: `OVERLAP (median ratio ${(sc.med / st.med).toFixed(2)}x) — no claim`;
+		console.log(`  scipy ${pyBody.padEnd(22)} ${fmtR(sc)}`);
 		console.log(`  ${key.padEnd(11)} ${fmtR(st)}  -> ${verdict}`);
 	}
 }
 
+// ---- schur_k want_t/Z cost split (research-schur-wasm-2026-07.md open
+// question 1): mode 0 = eigvals-only baseline, 1 = +T (range widening),
+// 2 = +Z (Q formation + Z updates), 3 = full Schur. min-of-2 per cell.
+console.log('\n## schur_k want_t/Z cost split (min-of-2, ms)');
+console.log('| n | eigvals (0) | +T (1) | +Z (2) | T+Z (3) | T share | Z share |');
+console.log('| -: | -: | -: | -: | -: | -: | -: |');
+for (const n of REP_SIZES) {
+	const ms = [];
+	for (const mode of [0, 1, 2, 3]) {
+		let best = Infinity;
+		for (let rep = 0; rep < 2; rep++) {
+			best = Math.min(best, await timeFaerOnce('run_schur_k_mode', n, [mode]));
+		}
+		ms.push(best / 1e6);
+	}
+	const tShare = ((ms[1] - ms[0]) / ms[3]) * 100;
+	const zShare = ((ms[2] - ms[0]) / ms[3]) * 100;
+	console.log(
+		`| ${n} | ${ms[0].toFixed(2)} | ${ms[1].toFixed(2)} | ${ms[2].toFixed(2)} | ${ms[3].toFixed(2)} | ${tShare.toFixed(0)}% | ${zShare.toFixed(0)}% |`,
+	);
+}
+
 // single-round faer timing (fresh instance, adaptive iters, NOT min-of-3 —
 // each replication round is one independent sample)
-async function timeFaerOnce(exportName, n) {
+async function timeFaerOnce(exportName, n, args = []) {
 	const { instance } = await WebAssembly.instantiate(bytes, {});
 	const e = instance.exports;
 	e.setup(n);
-	const f = () => e[exportName]();
+	const f = () => e[exportName](...args);
 	let sink = f();
 	let t0 = performance.now();
 	sink += f();
