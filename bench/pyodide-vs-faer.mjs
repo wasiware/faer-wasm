@@ -18,6 +18,26 @@ if (!wasmPath) {
 	console.error('usage: PYODIDE_PATH=<pyodide.mjs> node pyodide-vs-faer.mjs <bench-wasm>');
 	process.exit(2);
 }
+
+// TEMPORARY (2026-07-18, revert after the draws): route this dispatch to
+// the FMA race + ceiling probes on the runner (BLAS campaign step 1).
+{
+	const { execSync } = await import('node:child_process');
+	const sh = (cmd, env) =>
+		execSync(cmd, { stdio: 'inherit', env: env ? { ...process.env, ...env } : process.env });
+	console.log('=== ceilings, plain build');
+	sh(`node ceilings.mjs ${wasmPath}`);
+	sh(
+		'cargo build --lib --release --target-dir target-fma --target wasm32-unknown-unknown',
+		{ RUSTFLAGS: '-C target-feature=+simd128,+relaxed-simd' },
+	);
+	const fmaWasm = 'target-fma/wasm32-unknown-unknown/release/bench_harness.wasm';
+	console.log('=== ceilings, FMA build');
+	sh(`node ceilings.mjs ${fmaWasm}`);
+	console.log('=== 3-way race, FMA build');
+	sh(`node blas-ab.mjs ${fmaWasm} --fma`);
+	process.exit(0);
+}
 const SIZES = [64, 128, 256, 512];
 // [name, faer bench export, faer args (fixed), python lambda body]
 // The *_tuned rows use the docs/wasm.md §7 parameters — the honest current
