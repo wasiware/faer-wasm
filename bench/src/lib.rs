@@ -1603,21 +1603,57 @@ unsafe fn l1_iamax_simd(x: *const f64, len: usize) -> (f64, usize) {
 /// matrices. Bytes moved per call = 3·8·n² (read a, read b, write c).
 #[no_mangle]
 pub extern "C" fn run_ceiling_bw() -> f64 {
-    use faer_wasm_kernels::scalar::WasmScalar;
-    let s = state();
+    // v2 (2026-07-18): the original version allocated + copied an n×n
+    // matrix INSIDE the timed region (to_owned per call) and streamed c
+    // twice — depressing the measured ceiling and miscounting traffic.
+    // Now a pure single-pass triad sym ← a + 2.5·b over persistent
+    // state: exactly 3·8·n² bytes per call, no allocation. (sym is
+    // sacrificed as the destination — don't run symmetric-eigen benches
+    // on the same instance after this probe.)
+    let s = state_mut();
     let n = s.a.nrows();
-    let mut c = s.b.to_owned(); // c starts as b
-    let ccs = c.as_ref().col_stride() as usize;
-    let cp = c.as_mut().as_ptr_mut();
+    let acs = s.a.as_ref().col_stride() as usize;
+    let bcs = s.b.as_ref().col_stride() as usize;
+    let ccs = s.sym.as_ref().col_stride() as usize;
     let ap = s.a.as_ref().as_ptr();
-    let acs = s.a.col_stride() as usize;
+    let bp = s.b.as_ref().as_ptr();
+    let cp = s.sym.as_mut().as_ptr_mut();
     for j in 0..n {
         unsafe {
-            f64::scale(cp.add(j * ccs), 2.5, n);
-            f64::axpy(cp.add(j * ccs), ap.add(j * acs), -1.0, n);
+            triad(cp.add(j * ccs), ap.add(j * acs), bp.add(j * bcs), n);
         }
     }
-    c[(0, 0)] + c[(n - 1, n - 1)]
+    s.sym[(0, 0)] + s.sym[(n - 1, n - 1)]
+}
+
+/// c ← a + 2.5·b, one pass, 2 lanes 2× unrolled.
+#[cfg_attr(target_arch = "wasm32", target_feature(enable = "simd128"))]
+unsafe fn triad(c: *mut f64, a: *const f64, b: *const f64, len: usize) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use core::arch::wasm32::*;
+        let k = f64x2_splat(2.5);
+        let mut i = 0usize;
+        while i + 4 <= len {
+            let a0 = v128_load(a.add(i) as *const v128);
+            let b0 = v128_load(b.add(i) as *const v128);
+            let a1 = v128_load(a.add(i + 2) as *const v128);
+            let b1 = v128_load(b.add(i + 2) as *const v128);
+            v128_store(c.add(i) as *mut v128, f64x2_add(a0, f64x2_mul(b0, k)));
+            v128_store(c.add(i + 2) as *mut v128, f64x2_add(a1, f64x2_mul(b1, k)));
+            i += 4;
+        }
+        while i < len {
+            *c.add(i) = *a.add(i) + *b.add(i) * 2.5;
+            i += 1;
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        for i in 0..len {
+            *c.add(i) = *a.add(i) + *b.add(i) * 2.5;
+        }
+    }
 }
 
 /// Peak-arithmetic probe: register-resident mul+add chains, 8 independent

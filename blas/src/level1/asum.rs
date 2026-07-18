@@ -14,23 +14,24 @@ use crate::lanes::F64x2;
 
 /// Returns Σ|xᵢ|.
 pub fn asum(x: &[f64]) -> f64 {
-	let len = x.len();
-	let xp = x.as_ptr();
+	unsafe { imp(x.as_ptr(), x.len()) }
+}
+
+#[cfg_attr(target_arch = "wasm32", target_feature(enable = "simd128"))]
+unsafe fn imp(xp: *const f64, len: usize) -> f64 {
 	let mut a0 = F64x2::splat(0.0);
 	let mut a1 = F64x2::splat(0.0);
 	let mut i = 0usize;
-	unsafe {
-		while i + 4 <= len {
-			a0 = a0.add(F64x2::load(xp.add(i)).abs());
-			a1 = a1.add(F64x2::load(xp.add(i + 2)).abs());
-			i += 4;
-		}
-		let a = a0.add(a1);
-		let mut s = a.lane0() + a.lane1();
-		while i < len {
-			s += (*xp.add(i)).abs();
-			i += 1;
-		}
-		s
+	while i + 4 <= len {
+		a0 = a0.add(F64x2::load(xp.add(i)).abs());
+		a1 = a1.add(F64x2::load(xp.add(i + 2)).abs());
+		i += 4;
 	}
+	let a = a0.add(a1);
+	let mut s = a.lane0() + a.lane1();
+	while i < len {
+		s += (*xp.add(i)).abs();
+		i += 1;
+	}
+	s
 }

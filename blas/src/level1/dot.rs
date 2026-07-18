@@ -14,28 +14,28 @@ use crate::lanes::F64x2;
 /// Returns xᵀy. Panics on length mismatch.
 pub fn dot(x: &[f64], y: &[f64]) -> f64 {
 	assert_eq!(x.len(), y.len(), "dot: length mismatch");
-	let len = x.len();
-	let xp = x.as_ptr();
-	let yp = y.as_ptr();
+	unsafe { imp(x.as_ptr(), y.as_ptr(), x.len()) }
+}
+
+#[cfg_attr(target_arch = "wasm32", target_feature(enable = "simd128"))]
+unsafe fn imp(xp: *const f64, yp: *const f64, len: usize) -> f64 {
 	let mut acc0 = F64x2::splat(0.0);
 	let mut acc1 = F64x2::splat(0.0);
 	let mut i = 0usize;
-	unsafe {
-		while i + 4 <= len {
-			let x0 = F64x2::load(xp.add(i));
-			let y0 = F64x2::load(yp.add(i));
-			let x1 = F64x2::load(xp.add(i + 2));
-			let y1 = F64x2::load(yp.add(i + 2));
-			acc0 = acc0.add(x0.mul(y0));
-			acc1 = acc1.add(x1.mul(y1));
-			i += 4;
-		}
-		let acc = acc0.add(acc1);
-		let mut s = acc.lane0() + acc.lane1();
-		while i < len {
-			s += *xp.add(i) * *yp.add(i);
-			i += 1;
-		}
-		s
+	while i + 4 <= len {
+		let x0 = F64x2::load(xp.add(i));
+		let y0 = F64x2::load(yp.add(i));
+		let x1 = F64x2::load(xp.add(i + 2));
+		let y1 = F64x2::load(yp.add(i + 2));
+		acc0 = acc0.add(x0.mul(y0));
+		acc1 = acc1.add(x1.mul(y1));
+		i += 4;
 	}
+	let acc = acc0.add(acc1);
+	let mut s = acc.lane0() + acc.lane1();
+	while i < len {
+		s += *xp.add(i) * *yp.add(i);
+		i += 1;
+	}
+	s
 }
