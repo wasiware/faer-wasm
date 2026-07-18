@@ -27,6 +27,21 @@ drop patches the moment a release doesn't need them. New capability is
 built *alongside* faer (companion crates / consumer shim over public
 APIs), not inside it.
 
+## BLAS campaign sequencing (Andy, 2026-07-18)
+
+"Finish f64 layer, then the other layers, then tuning, no more lapack
+until blas is done." Binding order for the BLAS campaign:
+1. **f64 Level 3** completes the f64 layer (L1/L2 landed 2026-07-18);
+2. **the other number types** — the layer cloned into f32 and c64
+   (c32: decide when reached — nothing in the project has ever
+   shipped c32);
+3. **tuning** — the recorded levers (2-column gemv blocking, fused
+   symv, reduction accumulators, iamax fused pass, per-op FMA
+   variants) get their measurements only after the layer is complete
+   in all types;
+4. **only then** does any LAPACK-layer work resume (the kernel
+   re-route onto the layer included).
+
 ## Re-derived goals (architect session, 2026-07-18)
 
 Trigger: the BLAS-layer A/B (`docs/blas-ab-2026-07.md`) convicted a

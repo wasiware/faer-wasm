@@ -29,7 +29,7 @@ pub use trsv::trsv;
 /// Shared entry checks: the storage really contains an nrows×ncols
 /// matrix at stride cs.
 #[inline]
-fn check_mat(a_len: usize, nrows: usize, ncols: usize, cs: usize) {
+pub(crate) fn check_mat(a_len: usize, nrows: usize, ncols: usize, cs: usize) {
 	assert!(cs >= nrows, "column stride below row count");
 	if ncols > 0 {
 		assert!(
@@ -42,7 +42,7 @@ fn check_mat(a_len: usize, nrows: usize, ncols: usize, cs: usize) {
 /// y ← βy with BLAS β=0 semantics (a hard zero-fill, so stale NaN/inf
 /// in y cannot leak through 0·y).
 #[inline]
-fn scale_y(beta: f64, y: &mut [f64]) {
+pub(crate) fn scale_y(beta: f64, y: &mut [f64]) {
 	if beta == 0.0 {
 		y.fill(0.0);
 	} else if beta != 1.0 {
