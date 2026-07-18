@@ -75,9 +75,16 @@ re-derivation of the project goals. The decisions, in plain terms:
   we." scipy stays on the scoreboard for marketing only.
 - **New plan**: build our own complete BLAS layer first (the simple
   fast loops, properly named, tested, and benchmarked), then make our
-  LAPACK-layer functions use it. First step: check whether the FMA
-  build (a faster multiply instruction faer uses and our loops don't
-  yet) changes the verdict.
+  LAPACK-layer functions use it. Step 1 (done): the FMA build — a
+  faster multiply instruction — doubles the machine's speed limit but
+  does NOT rescue faer's multiply; it helps some of our loops
+  (trmm/trsm/gemv) and actively hurts another (syrk), so each
+  operation gets its variant picked by measurement. Step 2 (done):
+  Andy asked whether the plan's "hand-SIMD buys nothing here" rows
+  were ever tested — they weren't, we raced them, and all three
+  assumptions were wrong (swap 1.2–1.3× faster with SIMD, asum
+  3.5–4×, iamax 1.4–1.6×, on all three CI machines). The full build
+  list with evidence per row is `docs/blas-layer-plan-2026-07.md`.
 - **Threading: decided no** — browsers demand a server configuration
   (COOP/COEP) Andy excludes, and the honest payoff is small for our
   matrix sizes anyway. GPU (for f32) and batch parallelism remain
