@@ -1299,6 +1299,191 @@ pub extern "C" fn run_blas_ab(op: usize, variant: usize) -> f64 {
     }
 }
 
+// ---- L1 assumption race (architect, 2026-07-18): swap/asum/iamax were
+// carried as "hand-SIMD buys nothing" WITHOUT a measurement — exactly what
+// the race-the-foundation rule forbids. op: 0 swap, 1 asum, 2 iamax.
+// variant: 0 plain scalar loop, 1 hand-SIMD. Streams run per column (the
+// matrices may be stride-padded, so a flat n² walk would cross padding).
+#[no_mangle]
+pub extern "C" fn run_l1_ab(op: usize, variant: usize) -> f64 {
+    let s = state();
+    let n = s.a.nrows();
+    match (op, variant) {
+        (0, v) => {
+            // swap: exchange the columns of two working copies
+            let mut x = s.a.to_owned();
+            let mut y = s.b.to_owned();
+            let (xcs, ycs) = (x.as_ref().col_stride() as usize, y.as_ref().col_stride() as usize);
+            let (xp, yp) = (x.as_mut().as_ptr_mut(), y.as_mut().as_ptr_mut());
+            for j in 0..n {
+                unsafe {
+                    if v == 0 {
+                        l1_swap_plain(xp.add(j * xcs), yp.add(j * ycs), n);
+                    } else {
+                        l1_swap_simd(xp.add(j * xcs), yp.add(j * ycs), n);
+                    }
+                }
+            }
+            x[(0, 0)] + y[(n - 1, n - 1)]
+        }
+        (1, v) => {
+            let ap = s.a.as_ref().as_ptr();
+            let acs = s.a.col_stride() as usize;
+            let mut total = 0.0f64;
+            for j in 0..n {
+                total += unsafe {
+                    if v == 0 {
+                        l1_asum_plain(ap.add(j * acs), n)
+                    } else {
+                        l1_asum_simd(ap.add(j * acs), n)
+                    }
+                };
+            }
+            total
+        }
+        (2, v) => {
+            let ap = s.a.as_ref().as_ptr();
+            let acs = s.a.col_stride() as usize;
+            let mut best = -1.0f64;
+            let mut best_idx = 0usize;
+            for j in 0..n {
+                let (m, i) = unsafe {
+                    if v == 0 {
+                        l1_iamax_plain(ap.add(j * acs), n)
+                    } else {
+                        l1_iamax_simd(ap.add(j * acs), n)
+                    }
+                };
+                if m > best {
+                    best = m;
+                    best_idx = j * n + i;
+                }
+            }
+            best + best_idx as f64
+        }
+        _ => f64::NAN,
+    }
+}
+
+unsafe fn l1_swap_plain(x: *mut f64, y: *mut f64, len: usize) {
+    for i in 0..len {
+        let t = *x.add(i);
+        *x.add(i) = *y.add(i);
+        *y.add(i) = t;
+    }
+}
+
+unsafe fn l1_asum_plain(x: *const f64, len: usize) -> f64 {
+    let mut s = 0.0;
+    for i in 0..len {
+        s += (*x.add(i)).abs();
+    }
+    s
+}
+
+unsafe fn l1_iamax_plain(x: *const f64, len: usize) -> (f64, usize) {
+    let mut m = -1.0;
+    let mut mi = 0usize;
+    for i in 0..len {
+        let v = (*x.add(i)).abs();
+        if v > m {
+            m = v;
+            mi = i;
+        }
+    }
+    (m, mi)
+}
+
+#[cfg(target_arch = "wasm32")]
+#[target_feature(enable = "simd128")]
+unsafe fn l1_swap_simd(x: *mut f64, y: *mut f64, len: usize) {
+    use core::arch::wasm32::*;
+    let mut i = 0usize;
+    while i + 4 <= len {
+        let x0 = v128_load(x.add(i) as *const v128);
+        let y0 = v128_load(y.add(i) as *const v128);
+        let x1 = v128_load(x.add(i + 2) as *const v128);
+        let y1 = v128_load(y.add(i + 2) as *const v128);
+        v128_store(x.add(i) as *mut v128, y0);
+        v128_store(y.add(i) as *mut v128, x0);
+        v128_store(x.add(i + 2) as *mut v128, y1);
+        v128_store(y.add(i + 2) as *mut v128, x1);
+        i += 4;
+    }
+    while i < len {
+        let t = *x.add(i);
+        *x.add(i) = *y.add(i);
+        *y.add(i) = t;
+        i += 1;
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+unsafe fn l1_swap_simd(x: *mut f64, y: *mut f64, len: usize) {
+    l1_swap_plain(x, y, len)
+}
+
+#[cfg(target_arch = "wasm32")]
+#[target_feature(enable = "simd128")]
+unsafe fn l1_asum_simd(x: *const f64, len: usize) -> f64 {
+    use core::arch::wasm32::*;
+    let mut a0 = f64x2_splat(0.0);
+    let mut a1 = f64x2_splat(0.0);
+    let mut i = 0usize;
+    while i + 4 <= len {
+        a0 = f64x2_add(a0, f64x2_abs(v128_load(x.add(i) as *const v128)));
+        a1 = f64x2_add(a1, f64x2_abs(v128_load(x.add(i + 2) as *const v128)));
+        i += 4;
+    }
+    let a = f64x2_add(a0, a1);
+    let mut s = f64x2_extract_lane::<0>(a) + f64x2_extract_lane::<1>(a);
+    while i < len {
+        s += (*x.add(i)).abs();
+        i += 1;
+    }
+    s
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+unsafe fn l1_asum_simd(x: *const f64, len: usize) -> f64 {
+    l1_asum_plain(x, len)
+}
+
+#[cfg(target_arch = "wasm32")]
+#[target_feature(enable = "simd128")]
+unsafe fn l1_iamax_simd(x: *const f64, len: usize) -> (f64, usize) {
+    use core::arch::wasm32::*;
+    // branch-free vector pass for the max VALUE, then one scalar rescan for
+    // its index — the realistic SIMD strategy for an argmax
+    let mut m0 = f64x2_splat(-1.0);
+    let mut m1 = f64x2_splat(-1.0);
+    let mut i = 0usize;
+    while i + 4 <= len {
+        m0 = f64x2_pmax(m0, f64x2_abs(v128_load(x.add(i) as *const v128)));
+        m1 = f64x2_pmax(m1, f64x2_abs(v128_load(x.add(i + 2) as *const v128)));
+        i += 4;
+    }
+    let m = f64x2_pmax(m0, m1);
+    let mut best = f64x2_extract_lane::<0>(m).max(f64x2_extract_lane::<1>(m));
+    while i < len {
+        best = best.max((*x.add(i)).abs());
+        i += 1;
+    }
+    let mut mi = 0usize;
+    for k in 0..len {
+        if (*x.add(k)).abs() == best {
+            mi = k;
+            break;
+        }
+    }
+    (best, mi)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+unsafe fn l1_iamax_simd(x: *const f64, len: usize) -> (f64, usize) {
+    l1_iamax_plain(x, len)
+}
+
 // ---- ceiling probes (roofline metric, adopted 2026-07-18): the two
 // machine limits every benchmark row is scored against.
 
