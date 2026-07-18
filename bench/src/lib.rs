@@ -17,6 +17,9 @@ struct State {
     a: Mat<f64>,
     b: Mat<f64>,
     sym: Mat<f64>,
+    // a's values with a dominant diagonal: triangular solves/multiplies
+    // stay bounded across repeated bench iterations
+    tri: Mat<f64>,
     rhs: Mat<f64>,
     ac: Mat<faer::c64>,
     bc: Mat<faer::c64>,
@@ -55,6 +58,10 @@ pub extern "C" fn setup(n: usize) {
     for i in 0..n {
         sym[(i, i)] += 2.0 * n as f64;
     }
+    let mut tri = a.to_owned();
+    for i in 0..n {
+        tri[(i, i)] = 2.0 * n as f64 + 1.0;
+    }
     let rhs = fill(n, 1, 0x853C49E6748FEA9B);
     // c64 twins of a/b/rhs for the complex ops
     let re = fill(n, n, 0x2545F4914F6CDD1D);
@@ -69,7 +76,7 @@ pub extern "C" fn setup(n: usize) {
     let a32 = Mat::from_fn(n, n, |i, j| a[(i, j)] as f32);
     let b32 = Mat::from_fn(n, n, |i, j| b[(i, j)] as f32);
     let rhs32 = Mat::from_fn(n, 1, |i, j| rhs[(i, j)] as f32);
-    unsafe { *STATE.0.get() = Some(State { a, b, sym, rhs, ac, bc, rhsc, a32, b32, rhs32 }) }
+    unsafe { *STATE.0.get() = Some(State { a, b, sym, tri, rhs, ac, bc, rhsc, a32, b32, rhs32 }) }
 }
 
 #[no_mangle]
@@ -1443,6 +1450,95 @@ pub extern "C" fn run_l1_layer(op: usize) -> f64 {
         _ => return f64::NAN,
     }
     sink
+}
+
+/// Level-2 roofline rows over the persistent state. op: 0 gemv,
+/// 1 gemv_t, 2 ger, 3 symv, 4 trmv, 5 trsv, 6 syr, 7 syr2. Mutating
+/// targets and constants chosen so values stay bounded across bench
+/// iterations (small alpha on accumulating updates; trmv/trsv copy a
+/// fresh x from b's first column each call — 8n bytes, noise next to
+/// the 4·n²–16·n² the matrix stream moves).
+#[no_mangle]
+pub extern "C" fn run_l2_layer(op: usize) -> f64 {
+    use faer_wasm_blas::level1 as l1;
+    use faer_wasm_blas::level2 as l2;
+    let s = state_mut();
+    let n = s.a.nrows();
+    let acs = s.a.as_ref().col_stride() as usize;
+    let scs = s.sym.as_ref().col_stride() as usize;
+    let tcs = s.tri.as_ref().col_stride() as usize;
+    let a_len = if n == 0 { 0 } else { acs * (n - 1) + n };
+    let s_len = if n == 0 { 0 } else { scs * (n - 1) + n };
+    let t_len = if n == 0 { 0 } else { tcs * (n - 1) + n };
+    let a = unsafe { core::slice::from_raw_parts(s.a.as_ref().as_ptr(), a_len) };
+    let bx = unsafe { core::slice::from_raw_parts(s.b.as_ref().as_ptr(), n) }; // b's first column
+    let sym = unsafe { core::slice::from_raw_parts_mut(s.sym.as_mut().as_ptr_mut(), s_len) };
+    let tri = unsafe { core::slice::from_raw_parts(s.tri.as_ref().as_ptr(), t_len) };
+    let y = unsafe { core::slice::from_raw_parts_mut(s.rhs.as_mut().as_ptr_mut(), n) };
+    match op {
+        0 => l2::gemv(0.001, n, n, a, acs, bx, 0.5, y),
+        1 => l2::gemv_t(0.001, n, n, a, acs, bx, 0.5, y),
+        2 => l2::ger(0.0001, n, n, sym, scs, bx, bx),
+        3 => l2::symv(0.001, n, sym, scs, true, bx, 0.5, y),
+        4 => {
+            l1::copy(bx, y);
+            l2::trmv(n, tri, tcs, false, false, y);
+        }
+        5 => {
+            l1::copy(bx, y);
+            l2::trsv(n, tri, tcs, false, false, y);
+        }
+        6 => l2::syr(0.0001, n, sym, scs, true, bx),
+        7 => l2::syr2(0.0001, n, sym, scs, true, bx, bx),
+        _ => return f64::NAN,
+    }
+    y[0] + sym[0] + y[n - 1]
+}
+
+/// Level-2 cross-target determinism probes: fixed LCG-filled 257×257
+/// matrix (odd size — tails everywhere), one op each, folded to one
+/// value with the layer's own asum. op: 0 gemv, 1 gemv_t, 2 ger,
+/// 3 symv, 4 trmv, 5 trsv, 6 syr, 7 syr2.
+#[no_mangle]
+pub extern "C" fn run_l2_probe(op: usize) -> f64 {
+    use faer_wasm_blas::level1 as l1;
+    use faer_wasm_blas::level2 as l2;
+    const N: usize = 257;
+    let mut s = 7u64;
+    let mut next = || {
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        ((s >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0
+    };
+    let mut a = Mat::from_fn(N, N, |_, _| next());
+    for i in 0..N {
+        a[(i, i)] = 2.0 * N as f64 + 1.0; // solve-safe diagonal
+    }
+    let cs = a.as_ref().col_stride() as usize;
+    let a_len = cs * (N - 1) + N;
+    let x: [f64; N] = core::array::from_fn(|_| next());
+    let mut y: [f64; N] = core::array::from_fn(|_| next());
+    let am = unsafe { core::slice::from_raw_parts_mut(a.as_mut().as_ptr_mut(), a_len) };
+    match op {
+        0 => l2::gemv(0.7, N, N, am, cs, &x, 0.3, &mut y),
+        1 => l2::gemv_t(0.7, N, N, am, cs, &x, 0.3, &mut y),
+        2 => l2::ger(0.7, N, N, am, cs, &x, &x),
+        3 => l2::symv(0.7, N, am, cs, true, &x, 0.3, &mut y),
+        4 => {
+            y.copy_from_slice(&x);
+            l2::trmv(N, am, cs, false, false, &mut y);
+        }
+        5 => {
+            y.copy_from_slice(&x);
+            l2::trsv(N, am, cs, false, false, &mut y);
+        }
+        6 => l2::syr(0.7, N, am, cs, true, &x),
+        7 => l2::syr2(0.7, N, am, cs, true, &x, &x),
+        _ => return f64::NAN,
+    }
+    let a_probe = unsafe { core::slice::from_raw_parts(a.as_ref().as_ptr(), N) };
+    l1::asum(&y) + y[0] + y[N - 1] + l1::asum(a_probe)
 }
 
 /// Cross-target determinism probe: fixed LCG data (len 1001 — odd, so the
