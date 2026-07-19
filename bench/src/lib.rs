@@ -1393,7 +1393,7 @@ fn state_mut() -> &'static mut State {
 
 #[no_mangle]
 pub extern "C" fn run_l1_layer(op: usize) -> f64 {
-    use faer_wasm_blas::level1 as l1;
+    use faer_wasm_blas::l1;
     let s = state_mut();
     let n = s.a.nrows();
     let acs = s.a.as_ref().col_stride() as usize;
@@ -1407,52 +1407,52 @@ pub extern "C" fn run_l1_layer(op: usize) -> f64 {
     match op {
         0 => {
             for j in 0..n {
-                l1::copy(col(ap, acs, j), col(bp, bcs, j));
+                l1::dcopy(col(ap, acs, j), col(bp, bcs, j));
             }
             sink += unsafe { *bp };
         }
         1 => {
             for j in 0..n {
-                l1::swap(col(ap, acs, j), col(bp, bcs, j));
+                l1::dswap(col(ap, acs, j), col(bp, bcs, j));
             }
             sink += unsafe { *ap };
         }
         2 => {
             for j in 0..n {
-                l1::scal(-1.0, col(ap, acs, j));
+                l1::dscal(-1.0, col(ap, acs, j));
             }
             sink += unsafe { *ap };
         }
         3 => {
             for j in 0..n {
-                l1::axpy(0.001, col(ap, acs, j), col(bp, bcs, j));
+                l1::daxpy(0.001, col(ap, acs, j), col(bp, bcs, j));
             }
             sink += unsafe { *bp };
         }
         4 => {
             for j in 0..n {
-                l1::rot(col(ap, acs, j), col(bp, bcs, j), 0.8, 0.6);
+                l1::drot(col(ap, acs, j), col(bp, bcs, j), 0.8, 0.6);
             }
             sink += unsafe { *ap };
         }
         5 => {
             for j in 0..n {
-                sink += l1::dot(col(ap, acs, j), col(bp, bcs, j));
+                sink += l1::ddot(col(ap, acs, j), col(bp, bcs, j));
             }
         }
         6 => {
             for j in 0..n {
-                sink += l1::nrm2(col(ap, acs, j));
+                sink += l1::dnrm2(col(ap, acs, j));
             }
         }
         7 => {
             for j in 0..n {
-                sink += l1::asum(col(ap, acs, j));
+                sink += l1::dasum(col(ap, acs, j));
             }
         }
         8 => {
             for j in 0..n {
-                sink += l1::iamax(col(ap, acs, j)) as f64;
+                sink += l1::idamax(col(ap, acs, j)) as f64;
             }
         }
         _ => return f64::NAN,
@@ -1468,8 +1468,8 @@ pub extern "C" fn run_l1_layer(op: usize) -> f64 {
 /// the 4·n²–16·n² the matrix stream moves).
 #[no_mangle]
 pub extern "C" fn run_l2_layer(op: usize) -> f64 {
-    use faer_wasm_blas::level1 as l1;
-    use faer_wasm_blas::level2 as l2;
+    use faer_wasm_blas::l1;
+    use faer_wasm_blas::l2;
     let s = state_mut();
     let n = s.a.nrows();
     let acs = s.a.as_ref().col_stride() as usize;
@@ -1484,20 +1484,20 @@ pub extern "C" fn run_l2_layer(op: usize) -> f64 {
     let tri = unsafe { core::slice::from_raw_parts(s.tri.as_ref().as_ptr(), t_len) };
     let y = unsafe { core::slice::from_raw_parts_mut(s.rhs.as_mut().as_ptr_mut(), n) };
     match op {
-        0 => l2::gemv(0.001, n, n, a, acs, bx, 0.5, y),
-        1 => l2::gemv_t(0.001, n, n, a, acs, bx, 0.5, y),
-        2 => l2::ger(0.0001, n, n, sym, scs, bx, bx),
-        3 => l2::symv(0.001, n, sym, scs, true, bx, 0.5, y),
+        0 => l2::dgemv(0.001, n, n, a, acs, bx, 0.5, y),
+        1 => l2::dgemv_t(0.001, n, n, a, acs, bx, 0.5, y),
+        2 => l2::dger(0.0001, n, n, sym, scs, bx, bx),
+        3 => l2::dsymv(0.001, n, sym, scs, true, bx, 0.5, y),
         4 => {
-            l1::copy(bx, y);
-            l2::trmv(n, tri, tcs, false, false, y);
+            l1::dcopy(bx, y);
+            l2::dtrmv(n, tri, tcs, false, false, y);
         }
         5 => {
-            l1::copy(bx, y);
-            l2::trsv(n, tri, tcs, false, false, y);
+            l1::dcopy(bx, y);
+            l2::dtrsv(n, tri, tcs, false, false, y);
         }
-        6 => l2::syr(0.0001, n, sym, scs, true, bx),
-        7 => l2::syr2(0.0001, n, sym, scs, true, bx, bx),
+        6 => l2::dsyr(0.0001, n, sym, scs, true, bx),
+        7 => l2::dsyr2(0.0001, n, sym, scs, true, bx, bx),
         _ => return f64::NAN,
     }
     y[0] + sym[0] + y[n - 1]
@@ -1509,8 +1509,8 @@ pub extern "C" fn run_l2_layer(op: usize) -> f64 {
 /// 3 symv, 4 trmv, 5 trsv, 6 syr, 7 syr2.
 #[no_mangle]
 pub extern "C" fn run_l2_probe(op: usize) -> f64 {
-    use faer_wasm_blas::level1 as l1;
-    use faer_wasm_blas::level2 as l2;
+    use faer_wasm_blas::l1;
+    use faer_wasm_blas::l2;
     const N: usize = 257;
     let mut s = 7u64;
     let mut next = || {
@@ -1529,24 +1529,24 @@ pub extern "C" fn run_l2_probe(op: usize) -> f64 {
     let mut y: [f64; N] = core::array::from_fn(|_| next());
     let am = unsafe { core::slice::from_raw_parts_mut(a.as_mut().as_ptr_mut(), a_len) };
     match op {
-        0 => l2::gemv(0.7, N, N, am, cs, &x, 0.3, &mut y),
-        1 => l2::gemv_t(0.7, N, N, am, cs, &x, 0.3, &mut y),
-        2 => l2::ger(0.7, N, N, am, cs, &x, &x),
-        3 => l2::symv(0.7, N, am, cs, true, &x, 0.3, &mut y),
+        0 => l2::dgemv(0.7, N, N, am, cs, &x, 0.3, &mut y),
+        1 => l2::dgemv_t(0.7, N, N, am, cs, &x, 0.3, &mut y),
+        2 => l2::dger(0.7, N, N, am, cs, &x, &x),
+        3 => l2::dsymv(0.7, N, am, cs, true, &x, 0.3, &mut y),
         4 => {
             y.copy_from_slice(&x);
-            l2::trmv(N, am, cs, false, false, &mut y);
+            l2::dtrmv(N, am, cs, false, false, &mut y);
         }
         5 => {
             y.copy_from_slice(&x);
-            l2::trsv(N, am, cs, false, false, &mut y);
+            l2::dtrsv(N, am, cs, false, false, &mut y);
         }
-        6 => l2::syr(0.7, N, am, cs, true, &x),
-        7 => l2::syr2(0.7, N, am, cs, true, &x, &x),
+        6 => l2::dsyr(0.7, N, am, cs, true, &x),
+        7 => l2::dsyr2(0.7, N, am, cs, true, &x, &x),
         _ => return f64::NAN,
     }
     let a_probe = unsafe { core::slice::from_raw_parts(a.as_ref().as_ptr(), N) };
-    l1::asum(&y) + y[0] + y[N - 1] + l1::asum(a_probe)
+    l1::dasum(&y) + y[0] + y[N - 1] + l1::dasum(a_probe)
 }
 
 /// Level-3 roofline rows over the persistent state. op: 0 gemm,
@@ -1559,8 +1559,8 @@ pub extern "C" fn run_l2_probe(op: usize) -> f64 {
 /// the solves bounded.
 #[no_mangle]
 pub extern "C" fn run_l3_layer(op: usize) -> f64 {
-    use faer_wasm_blas::level1 as l1;
-    use faer_wasm_blas::level3 as l3;
+    use faer_wasm_blas::l1;
+    use faer_wasm_blas::l3;
     let s = state_mut();
     let n = s.a.nrows();
     let acs = s.a.as_ref().col_stride() as usize;
@@ -1574,29 +1574,29 @@ pub extern "C" fn run_l3_layer(op: usize) -> f64 {
     let sym = unsafe { core::slice::from_raw_parts_mut(s.sym.as_mut().as_ptr_mut(), len(scs)) };
     let refresh = |dst: &mut [f64]| {
         for j in 0..n {
-            l1::copy(&b[j * bcs..j * bcs + n], &mut dst[j * scs..j * scs + n]);
+            l1::dcopy(&b[j * bcs..j * bcs + n], &mut dst[j * scs..j * scs + n]);
         }
     };
     match op {
-        0 => l3::gemm(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs),
-        1 => l3::symm_left(0.001, n, n, tri, tcs, true, b, bcs, 0.5, sym, scs),
-        2 => l3::syrk(0.001, n, n, a, acs, 0.5, sym, scs, true),
-        3 => l3::syr2k(0.001, n, n, a, acs, b, bcs, 0.5, sym, scs, true),
+        0 => l3::dgemm(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs),
+        1 => l3::dsymm_left(0.001, n, n, tri, tcs, true, b, bcs, 0.5, sym, scs),
+        2 => l3::dsyrk(0.001, n, n, a, acs, 0.5, sym, scs, true),
+        3 => l3::dsyr2k(0.001, n, n, a, acs, b, bcs, 0.5, sym, scs, true),
         4 => {
             refresh(sym);
-            l3::trmm_left(1.0, n, n, tri, tcs, false, false, sym, scs);
+            l3::dtrmm_left(1.0, n, n, tri, tcs, false, false, sym, scs);
         }
         5 => {
             refresh(sym);
-            l3::trsm_left(1.0, n, n, tri, tcs, false, false, sym, scs);
+            l3::dtrsm_left(1.0, n, n, tri, tcs, false, false, sym, scs);
         }
         6 => {
             refresh(sym);
-            l3::trmm_right(1.0, n, n, tri, tcs, true, false, sym, scs);
+            l3::dtrmm_right(1.0, n, n, tri, tcs, true, false, sym, scs);
         }
         7 => {
             refresh(sym);
-            l3::trsm_right(1.0, n, n, tri, tcs, true, false, sym, scs);
+            l3::dtrsm_right(1.0, n, n, tri, tcs, true, false, sym, scs);
         }
         _ => return f64::NAN,
     }
@@ -1608,7 +1608,7 @@ pub extern "C" fn run_l3_layer(op: usize) -> f64 {
 /// raced for speed only.
 #[no_mangle]
 pub extern "C" fn run_l3_tuned_gemm() -> f64 {
-    use faer_wasm_blas::level3 as l3;
+    use faer_wasm_blas::l3;
     let s = state_mut();
     let n = s.a.nrows();
     let acs = s.a.as_ref().col_stride() as usize;
@@ -1618,14 +1618,14 @@ pub extern "C" fn run_l3_tuned_gemm() -> f64 {
     let a = unsafe { core::slice::from_raw_parts(s.a.as_ref().as_ptr(), len(acs)) };
     let b = unsafe { core::slice::from_raw_parts(s.b.as_ref().as_ptr(), len(bcs)) };
     let sym = unsafe { core::slice::from_raw_parts_mut(s.sym.as_mut().as_ptr_mut(), len(scs)) };
-    l3::gemm_tiled(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs);
+    l3::dgemm_tiled(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs);
     sym[0] + sym[len(scs) - 1]
 }
 
 /// Same, for the 4-column fused candidate.
 #[no_mangle]
 pub extern "C" fn run_l3_col4_gemm() -> f64 {
-    use faer_wasm_blas::level3 as l3;
+    use faer_wasm_blas::l3;
     let s = state_mut();
     let n = s.a.nrows();
     let acs = s.a.as_ref().col_stride() as usize;
@@ -1635,7 +1635,7 @@ pub extern "C" fn run_l3_col4_gemm() -> f64 {
     let a = unsafe { core::slice::from_raw_parts(s.a.as_ref().as_ptr(), len(acs)) };
     let b = unsafe { core::slice::from_raw_parts(s.b.as_ref().as_ptr(), len(bcs)) };
     let sym = unsafe { core::slice::from_raw_parts_mut(s.sym.as_mut().as_ptr_mut(), len(scs)) };
-    l3::gemm_col4(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs);
+    l3::dgemm_col4(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs);
     sym[0] + sym[len(scs) - 1]
 }
 
@@ -1645,8 +1645,8 @@ pub extern "C" fn run_l3_col4_gemm() -> f64 {
 /// symm_right at 8.
 #[no_mangle]
 pub extern "C" fn run_l3_probe(op: usize) -> f64 {
-    use faer_wasm_blas::level1 as l1;
-    use faer_wasm_blas::level3 as l3;
+    use faer_wasm_blas::l1;
+    use faer_wasm_blas::l3;
     const N: usize = 65;
     const K: usize = 33;
     let mut st = 11u64;
@@ -1672,20 +1672,20 @@ pub extern "C" fn run_l3_probe(op: usize) -> f64 {
     let bv = unsafe { core::slice::from_raw_parts(b.as_ref().as_ptr(), len(bcs)) };
     let cv = unsafe { core::slice::from_raw_parts_mut(c.as_mut().as_ptr_mut(), len(ccs)) };
     match op {
-        0 => l3::gemm(0.7, N, K, N, av, acs, bv, bcs, 0.3, cv, ccs),
-        1 => l3::symm_left(0.7, N, N, av, acs, true, bv, bcs, 0.3, cv, ccs),
-        2 => l3::syrk(0.7, N, K, av, acs, 0.3, cv, ccs, true),
-        3 => l3::syr2k(0.7, N, K, av, acs, bv, bcs, 0.3, cv, ccs, true),
-        4 => l3::trmm_left(0.7, N, N, av, acs, false, false, cv, ccs),
-        5 => l3::trsm_left(0.7, N, N, av, acs, false, false, cv, ccs),
-        6 => l3::trmm_right(0.7, N, N, av, acs, true, false, cv, ccs),
-        7 => l3::trsm_right(0.7, N, N, av, acs, true, false, cv, ccs),
-        8 => l3::symm_right(0.7, N, N, av, acs, true, bv, bcs, 0.3, cv, ccs),
+        0 => l3::dgemm(0.7, N, K, N, av, acs, bv, bcs, 0.3, cv, ccs),
+        1 => l3::dsymm_left(0.7, N, N, av, acs, true, bv, bcs, 0.3, cv, ccs),
+        2 => l3::dsyrk(0.7, N, K, av, acs, 0.3, cv, ccs, true),
+        3 => l3::dsyr2k(0.7, N, K, av, acs, bv, bcs, 0.3, cv, ccs, true),
+        4 => l3::dtrmm_left(0.7, N, N, av, acs, false, false, cv, ccs),
+        5 => l3::dtrsm_left(0.7, N, N, av, acs, false, false, cv, ccs),
+        6 => l3::dtrmm_right(0.7, N, N, av, acs, true, false, cv, ccs),
+        7 => l3::dtrsm_right(0.7, N, N, av, acs, true, false, cv, ccs),
+        8 => l3::dsymm_right(0.7, N, N, av, acs, true, bv, bcs, 0.3, cv, ccs),
         _ => return f64::NAN,
     }
     let mut fold = 0.0;
     for j in 0..N {
-        fold += l1::asum(&cv[j * ccs..j * ccs + N]);
+        fold += l1::dasum(&cv[j * ccs..j * ccs + N]);
     }
     fold + cv[0] + cv[len(ccs) - 1]
 }
@@ -1696,7 +1696,7 @@ pub extern "C" fn run_l3_probe(op: usize) -> f64 {
 /// blas/src/lanes.rs). op: 0 dot, 1 asum, 2 nrm2, 3 iamax.
 #[no_mangle]
 pub extern "C" fn run_l1_probe(op: usize) -> f64 {
-    use faer_wasm_blas::level1 as l1;
+    use faer_wasm_blas::l1;
     const LEN: usize = 1001;
     let mut x = [0.0f64; LEN];
     let mut y = [0.0f64; LEN];
@@ -1714,10 +1714,10 @@ pub extern "C" fn run_l1_probe(op: usize) -> f64 {
         *v = next();
     }
     match op {
-        0 => l1::dot(&x, &y),
-        1 => l1::asum(&x),
-        2 => l1::nrm2(&x),
-        3 => l1::iamax(&x) as f64,
+        0 => l1::ddot(&x, &y),
+        1 => l1::dasum(&x),
+        2 => l1::dnrm2(&x),
+        3 => l1::idamax(&x) as f64,
         _ => f64::NAN,
     }
 }
@@ -2018,7 +2018,7 @@ mod wasm_shim {
 
 #[no_mangle]
 pub extern "C" fn run_l1_layer_f32(op: usize) -> f64 {
-    use faer_wasm_blas::f32::level1 as l1;
+    use faer_wasm_blas::l1;
     let s = state_mut();
     let n = s.a32.nrows();
     let acs = s.a32.as_ref().col_stride() as usize;
@@ -2032,52 +2032,52 @@ pub extern "C" fn run_l1_layer_f32(op: usize) -> f64 {
     match op {
         0 => {
             for j in 0..n {
-                l1::copy(col(ap, acs, j), col(bp, bcs, j));
+                l1::scopy(col(ap, acs, j), col(bp, bcs, j));
             }
             sink += unsafe { *bp } as f64;
         }
         1 => {
             for j in 0..n {
-                l1::swap(col(ap, acs, j), col(bp, bcs, j));
+                l1::sswap(col(ap, acs, j), col(bp, bcs, j));
             }
             sink += unsafe { *ap } as f64;
         }
         2 => {
             for j in 0..n {
-                l1::scal(-1.0, col(ap, acs, j));
+                l1::sscal(-1.0, col(ap, acs, j));
             }
             sink += unsafe { *ap } as f64;
         }
         3 => {
             for j in 0..n {
-                l1::axpy(0.001, col(ap, acs, j), col(bp, bcs, j));
+                l1::saxpy(0.001, col(ap, acs, j), col(bp, bcs, j));
             }
             sink += unsafe { *bp } as f64;
         }
         4 => {
             for j in 0..n {
-                l1::rot(col(ap, acs, j), col(bp, bcs, j), 0.8, 0.6);
+                l1::srot(col(ap, acs, j), col(bp, bcs, j), 0.8, 0.6);
             }
             sink += unsafe { *ap } as f64;
         }
         5 => {
             for j in 0..n {
-                sink += l1::dot(col(ap, acs, j), col(bp, bcs, j)) as f64;
+                sink += l1::sdot(col(ap, acs, j), col(bp, bcs, j)) as f64;
             }
         }
         6 => {
             for j in 0..n {
-                sink += l1::nrm2(col(ap, acs, j)) as f64;
+                sink += l1::snrm2(col(ap, acs, j)) as f64;
             }
         }
         7 => {
             for j in 0..n {
-                sink += l1::asum(col(ap, acs, j)) as f64;
+                sink += l1::sasum(col(ap, acs, j)) as f64;
             }
         }
         8 => {
             for j in 0..n {
-                sink += l1::iamax(col(ap, acs, j)) as f64;
+                sink += l1::isamax(col(ap, acs, j)) as f64;
             }
         }
         _ => return f64::NAN,
@@ -2087,8 +2087,8 @@ pub extern "C" fn run_l1_layer_f32(op: usize) -> f64 {
 
 #[no_mangle]
 pub extern "C" fn run_l2_layer_f32(op: usize) -> f64 {
-    use faer_wasm_blas::f32::level1 as l1;
-    use faer_wasm_blas::f32::level2 as l2;
+    use faer_wasm_blas::l1;
+    use faer_wasm_blas::l2;
     let s = state_mut();
     let n = s.a32.nrows();
     let acs = s.a32.as_ref().col_stride() as usize;
@@ -2103,20 +2103,20 @@ pub extern "C" fn run_l2_layer_f32(op: usize) -> f64 {
     let tri = unsafe { core::slice::from_raw_parts(s.tri32.as_ref().as_ptr(), t_len) };
     let y = unsafe { core::slice::from_raw_parts_mut(s.rhs32.as_mut().as_ptr_mut(), n) };
     match op {
-        0 => l2::gemv(0.001, n, n, a, acs, bx, 0.5, y),
-        1 => l2::gemv_t(0.001, n, n, a, acs, bx, 0.5, y),
-        2 => l2::ger(0.0001, n, n, sym, scs, bx, bx),
-        3 => l2::symv(0.001, n, sym, scs, true, bx, 0.5, y),
+        0 => l2::sgemv(0.001, n, n, a, acs, bx, 0.5, y),
+        1 => l2::sgemv_t(0.001, n, n, a, acs, bx, 0.5, y),
+        2 => l2::sger(0.0001, n, n, sym, scs, bx, bx),
+        3 => l2::ssymv(0.001, n, sym, scs, true, bx, 0.5, y),
         4 => {
-            l1::copy(bx, y);
-            l2::trmv(n, tri, tcs, false, false, y);
+            l1::scopy(bx, y);
+            l2::strmv(n, tri, tcs, false, false, y);
         }
         5 => {
-            l1::copy(bx, y);
-            l2::trsv(n, tri, tcs, false, false, y);
+            l1::scopy(bx, y);
+            l2::strsv(n, tri, tcs, false, false, y);
         }
-        6 => l2::syr(0.0001, n, sym, scs, true, bx),
-        7 => l2::syr2(0.0001, n, sym, scs, true, bx, bx),
+        6 => l2::ssyr(0.0001, n, sym, scs, true, bx),
+        7 => l2::ssyr2(0.0001, n, sym, scs, true, bx, bx),
         _ => return f64::NAN,
     }
     (y[0] + sym[0] + y[n - 1]) as f64
@@ -2124,8 +2124,8 @@ pub extern "C" fn run_l2_layer_f32(op: usize) -> f64 {
 
 #[no_mangle]
 pub extern "C" fn run_l3_layer_f32(op: usize) -> f64 {
-    use faer_wasm_blas::f32::level1 as l1;
-    use faer_wasm_blas::f32::level3 as l3;
+    use faer_wasm_blas::l1;
+    use faer_wasm_blas::l3;
     let s = state_mut();
     let n = s.a32.nrows();
     let acs = s.a32.as_ref().col_stride() as usize;
@@ -2139,29 +2139,29 @@ pub extern "C" fn run_l3_layer_f32(op: usize) -> f64 {
     let sym = unsafe { core::slice::from_raw_parts_mut(s.sym32.as_mut().as_ptr_mut(), len(scs)) };
     let refresh = |dst: &mut [f32]| {
         for j in 0..n {
-            l1::copy(&b[j * bcs..j * bcs + n], &mut dst[j * scs..j * scs + n]);
+            l1::scopy(&b[j * bcs..j * bcs + n], &mut dst[j * scs..j * scs + n]);
         }
     };
     match op {
-        0 => l3::gemm(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs),
-        1 => l3::symm_left(0.001, n, n, tri, tcs, true, b, bcs, 0.5, sym, scs),
-        2 => l3::syrk(0.001, n, n, a, acs, 0.5, sym, scs, true),
-        3 => l3::syr2k(0.001, n, n, a, acs, b, bcs, 0.5, sym, scs, true),
+        0 => l3::sgemm(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs),
+        1 => l3::ssymm_left(0.001, n, n, tri, tcs, true, b, bcs, 0.5, sym, scs),
+        2 => l3::ssyrk(0.001, n, n, a, acs, 0.5, sym, scs, true),
+        3 => l3::ssyr2k(0.001, n, n, a, acs, b, bcs, 0.5, sym, scs, true),
         4 => {
             refresh(sym);
-            l3::trmm_left(1.0, n, n, tri, tcs, false, false, sym, scs);
+            l3::strmm_left(1.0, n, n, tri, tcs, false, false, sym, scs);
         }
         5 => {
             refresh(sym);
-            l3::trsm_left(1.0, n, n, tri, tcs, false, false, sym, scs);
+            l3::strsm_left(1.0, n, n, tri, tcs, false, false, sym, scs);
         }
         6 => {
             refresh(sym);
-            l3::trmm_right(1.0, n, n, tri, tcs, true, false, sym, scs);
+            l3::strmm_right(1.0, n, n, tri, tcs, true, false, sym, scs);
         }
         7 => {
             refresh(sym);
-            l3::trsm_right(1.0, n, n, tri, tcs, true, false, sym, scs);
+            l3::strsm_right(1.0, n, n, tri, tcs, true, false, sym, scs);
         }
         _ => return f64::NAN,
     }
@@ -2172,7 +2172,7 @@ pub extern "C" fn run_l3_layer_f32(op: usize) -> f64 {
 /// the byte threshold is inherited from f64; these race it directly.
 #[no_mangle]
 pub extern "C" fn run_l3_tuned_gemm_f32() -> f64 {
-    use faer_wasm_blas::f32::level3 as l3;
+    use faer_wasm_blas::l3;
     let s = state_mut();
     let n = s.a32.nrows();
     let acs = s.a32.as_ref().col_stride() as usize;
@@ -2182,13 +2182,13 @@ pub extern "C" fn run_l3_tuned_gemm_f32() -> f64 {
     let a = unsafe { core::slice::from_raw_parts(s.a32.as_ref().as_ptr(), len(acs)) };
     let b = unsafe { core::slice::from_raw_parts(s.b32.as_ref().as_ptr(), len(bcs)) };
     let sym = unsafe { core::slice::from_raw_parts_mut(s.sym32.as_mut().as_ptr_mut(), len(scs)) };
-    l3::gemm_tiled(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs);
+    l3::sgemm_tiled(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs);
     (sym[0] + sym[len(scs) - 1]) as f64
 }
 
 #[no_mangle]
 pub extern "C" fn run_l3_col4_gemm_f32() -> f64 {
-    use faer_wasm_blas::f32::level3 as l3;
+    use faer_wasm_blas::l3;
     let s = state_mut();
     let n = s.a32.nrows();
     let acs = s.a32.as_ref().col_stride() as usize;
@@ -2198,7 +2198,7 @@ pub extern "C" fn run_l3_col4_gemm_f32() -> f64 {
     let a = unsafe { core::slice::from_raw_parts(s.a32.as_ref().as_ptr(), len(acs)) };
     let b = unsafe { core::slice::from_raw_parts(s.b32.as_ref().as_ptr(), len(bcs)) };
     let sym = unsafe { core::slice::from_raw_parts_mut(s.sym32.as_mut().as_ptr_mut(), len(scs)) };
-    l3::gemm_col4(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs);
+    l3::sgemm_col4(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs);
     (sym[0] + sym[len(scs) - 1]) as f64
 }
 
@@ -2206,7 +2206,7 @@ pub extern "C" fn run_l3_col4_gemm_f32() -> f64 {
 /// values cast to f32. op: 0 dot, 1 asum, 2 nrm2, 3 iamax.
 #[no_mangle]
 pub extern "C" fn run_l1_probe_f32(op: usize) -> f64 {
-    use faer_wasm_blas::f32::level1 as l1;
+    use faer_wasm_blas::l1;
     const LEN: usize = 1001;
     let mut x = [0.0f32; LEN];
     let mut y = [0.0f32; LEN];
@@ -2224,10 +2224,10 @@ pub extern "C" fn run_l1_probe_f32(op: usize) -> f64 {
         *v = next();
     }
     match op {
-        0 => l1::dot(&x, &y) as f64,
-        1 => l1::asum(&x) as f64,
-        2 => l1::nrm2(&x) as f64,
-        3 => l1::iamax(&x) as f64,
+        0 => l1::sdot(&x, &y) as f64,
+        1 => l1::sasum(&x) as f64,
+        2 => l1::snrm2(&x) as f64,
+        3 => l1::isamax(&x) as f64,
         _ => f64::NAN,
     }
 }
@@ -2235,8 +2235,8 @@ pub extern "C" fn run_l1_probe_f32(op: usize) -> f64 {
 /// f32 L2 determinism probes — same 257×257 recipe cast to f32.
 #[no_mangle]
 pub extern "C" fn run_l2_probe_f32(op: usize) -> f64 {
-    use faer_wasm_blas::f32::level1 as l1;
-    use faer_wasm_blas::f32::level2 as l2;
+    use faer_wasm_blas::l1;
+    use faer_wasm_blas::l2;
     const N: usize = 257;
     let mut s = 7u64;
     let mut next = || {
@@ -2255,31 +2255,31 @@ pub extern "C" fn run_l2_probe_f32(op: usize) -> f64 {
     let mut y: [f32; N] = core::array::from_fn(|_| next());
     let am = unsafe { core::slice::from_raw_parts_mut(a.as_mut().as_ptr_mut(), a_len) };
     match op {
-        0 => l2::gemv(0.7, N, N, am, cs, &x, 0.3, &mut y),
-        1 => l2::gemv_t(0.7, N, N, am, cs, &x, 0.3, &mut y),
-        2 => l2::ger(0.7, N, N, am, cs, &x, &x),
-        3 => l2::symv(0.7, N, am, cs, true, &x, 0.3, &mut y),
+        0 => l2::sgemv(0.7, N, N, am, cs, &x, 0.3, &mut y),
+        1 => l2::sgemv_t(0.7, N, N, am, cs, &x, 0.3, &mut y),
+        2 => l2::sger(0.7, N, N, am, cs, &x, &x),
+        3 => l2::ssymv(0.7, N, am, cs, true, &x, 0.3, &mut y),
         4 => {
             y.copy_from_slice(&x);
-            l2::trmv(N, am, cs, false, false, &mut y);
+            l2::strmv(N, am, cs, false, false, &mut y);
         }
         5 => {
             y.copy_from_slice(&x);
-            l2::trsv(N, am, cs, false, false, &mut y);
+            l2::strsv(N, am, cs, false, false, &mut y);
         }
-        6 => l2::syr(0.7, N, am, cs, true, &x),
-        7 => l2::syr2(0.7, N, am, cs, true, &x, &x),
+        6 => l2::ssyr(0.7, N, am, cs, true, &x),
+        7 => l2::ssyr2(0.7, N, am, cs, true, &x, &x),
         _ => return f64::NAN,
     }
     let a_probe = unsafe { core::slice::from_raw_parts(a.as_ref().as_ptr(), N) };
-    (l1::asum(&y) + y[0] + y[N - 1] + l1::asum(a_probe)) as f64
+    (l1::sasum(&y) + y[0] + y[N - 1] + l1::sasum(a_probe)) as f64
 }
 
 /// f32 L3 determinism probes — same 65×65 recipe cast to f32.
 #[no_mangle]
 pub extern "C" fn run_l3_probe_f32(op: usize) -> f64 {
-    use faer_wasm_blas::f32::level1 as l1;
-    use faer_wasm_blas::f32::level3 as l3;
+    use faer_wasm_blas::l1;
+    use faer_wasm_blas::l3;
     const N: usize = 65;
     const K: usize = 33;
     let mut st = 11u64;
@@ -2305,20 +2305,20 @@ pub extern "C" fn run_l3_probe_f32(op: usize) -> f64 {
     let bv = unsafe { core::slice::from_raw_parts(b.as_ref().as_ptr(), len(bcs)) };
     let cv = unsafe { core::slice::from_raw_parts_mut(c.as_mut().as_ptr_mut(), len(ccs)) };
     match op {
-        0 => l3::gemm(0.7, N, K, N, av, acs, bv, bcs, 0.3, cv, ccs),
-        1 => l3::symm_left(0.7, N, N, av, acs, true, bv, bcs, 0.3, cv, ccs),
-        2 => l3::syrk(0.7, N, K, av, acs, 0.3, cv, ccs, true),
-        3 => l3::syr2k(0.7, N, K, av, acs, bv, bcs, 0.3, cv, ccs, true),
-        4 => l3::trmm_left(0.7, N, N, av, acs, false, false, cv, ccs),
-        5 => l3::trsm_left(0.7, N, N, av, acs, false, false, cv, ccs),
-        6 => l3::trmm_right(0.7, N, N, av, acs, true, false, cv, ccs),
-        7 => l3::trsm_right(0.7, N, N, av, acs, true, false, cv, ccs),
-        8 => l3::symm_right(0.7, N, N, av, acs, true, bv, bcs, 0.3, cv, ccs),
+        0 => l3::sgemm(0.7, N, K, N, av, acs, bv, bcs, 0.3, cv, ccs),
+        1 => l3::ssymm_left(0.7, N, N, av, acs, true, bv, bcs, 0.3, cv, ccs),
+        2 => l3::ssyrk(0.7, N, K, av, acs, 0.3, cv, ccs, true),
+        3 => l3::ssyr2k(0.7, N, K, av, acs, bv, bcs, 0.3, cv, ccs, true),
+        4 => l3::strmm_left(0.7, N, N, av, acs, false, false, cv, ccs),
+        5 => l3::strsm_left(0.7, N, N, av, acs, false, false, cv, ccs),
+        6 => l3::strmm_right(0.7, N, N, av, acs, true, false, cv, ccs),
+        7 => l3::strsm_right(0.7, N, N, av, acs, true, false, cv, ccs),
+        8 => l3::ssymm_right(0.7, N, N, av, acs, true, bv, bcs, 0.3, cv, ccs),
         _ => return f64::NAN,
     }
     let mut fold = 0.0f32;
     for j in 0..N {
-        fold += l1::asum(&cv[j * ccs..j * ccs + N]);
+        fold += l1::sasum(&cv[j * ccs..j * ccs + N]);
     }
     (fold + cv[0] + cv[len(ccs) - 1]) as f64
 }

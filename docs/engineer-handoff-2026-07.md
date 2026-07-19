@@ -48,8 +48,12 @@ evidence log: docs/blas-ab-2026-07.md steps 1–6. Scoreboard: STATUS §3.
   rounding + one mul-add per k, k ascending) — that's what makes
   dispatch invisible and testable with assert_eq on bits.
 - Levels 2/3 are literal loops of Level 1/2 calls on column slices —
-  one stream implementation per op, all in level1 (+ axpy4/tile_4x4
-  in gemm.rs as the only tuned specializations so far).
+  one stream implementation per op (map: blas/src/README.md). Layout
+  since the 2026-07-19 restructure: netlib naming, one file per
+  routine per type (daxpy.rs/saxpy.rs...) under src/l{1,2,3}; tuned
+  kernels (d/saxpy4, d/saxpy4in, d/saxpy_dot(4)) in src/kernels.rs;
+  tests mirror it under tests/l{1,2,3}/ with main.rs+common.rs per
+  level; the live scoreboard is blas/tests/README.md.
 
 ## bench harness map
 - State: a, b (inputs), sym (SACRIFICIAL — triad destination and L2/L3

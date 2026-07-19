@@ -55,7 +55,7 @@ clones inherit tuned shapes for free instead of re-tuning ×3):
    trmm/trsm/gemv and hurt syrk;
 3. **the other number types** — the tuned layer cloned into f32 and
    c64 (c32: decide when reached — nothing has ever shipped c32).
-   f32: DONE 2026-07-19, two runner draws (`blas/src/f32/`, 23 fns,
+   f32: DONE 2026-07-19, two runner draws (the s-routines, 23 fns,
    30 mirrored tests, 21 probes bit-identical both draws, rooflines +
    dispatch race — docs step 10: peak ~1.8× f64, L3 at the same
    fractions of it; deliberate deviations from a verbatim clone: 8×4

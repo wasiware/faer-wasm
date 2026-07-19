@@ -1,16 +1,17 @@
-//! faer-wasm-blas: the wasm-native BLAS layer, one file per function.
-//! Plan of record: README.md in this folder. The f64 layer is complete
-//! and tuned (all three levels; unit stride — callers pass contiguous
-//! column slices; strided access defeats streaming and no consumer
-//! wants it). The tuned multi-column loop shapes live in `kernels`;
-//! the SIMD lane type with its bit-identical native emulation lives in
-//! `lanes`. Other number types (f32, c64) are the next campaign.
+//! faer-wasm-blas: the wasm-native BLAS layer, one file per BLAS
+//! routine in netlib naming (d-prefixed f64, s-prefixed f32 — the
+//! convention is documented in src/l1/README.md; the dependency map
+//! in src/README.md). Both type layers are complete and tuned; unit
+//! stride — callers pass contiguous column slices (strided access
+//! defeats streaming and no consumer wants it). The tuned
+//! multi-column loop shapes live in `kernels`; the SIMD lane types
+//! with their bit-identical native emulation live in `lanes`. Plan of
+//! record: README.md in the crate root.
 #![no_std]
 
-pub mod f32;
 mod kernels;
 mod lanes;
 
-pub mod level1;
-pub mod level2;
-pub mod level3;
+pub mod l1;
+pub mod l2;
+pub mod l3;

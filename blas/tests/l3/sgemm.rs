@@ -1,0 +1,104 @@
+use super::common::*;
+use faer_wasm_blas::l3::*;
+
+#[test]
+fn gemm_bit_for_bit_and_bounded() {
+	let mut rng = Lcg(31);
+	for &(m, k, n) in DIMS {
+		let (acs, bcs, ccs) = (m + 1, k + 2, m + 3);
+		let a = rng.mat_f32(m, k, acs);
+		let b = rng.mat_f32(k, n, bcs);
+		let c0 = rng.mat_f32(m, n, ccs);
+		for (alpha, beta) in [(1.0, 0.0), (-0.7, 0.4)] {
+			let mut c = c0.clone();
+			sgemm(alpha, m, k, n, &a, acs, &b, bcs, beta, &mut c, ccs);
+			// same-order scalar replay (sgemv per column = column-saxpy)
+			let mut cr = c0.clone();
+			for j in 0..n {
+				if beta == 0.0 {
+					for i in 0..m {
+						cr[j * ccs + i] = 0.0;
+					}
+				} else if beta != 1.0 {
+					for i in 0..m {
+						cr[j * ccs + i] *= beta;
+					}
+				}
+				for l in 0..k {
+					let t = alpha * b[j * bcs + l];
+					for i in 0..m {
+						cr[j * ccs + i] += a[l * acs + i] * t;
+					}
+				}
+			}
+			for j in 0..n {
+				for i in 0..m {
+					assert_eq!(
+						c[j * ccs + i].to_bits(),
+						cr[j * ccs + i].to_bits(),
+						"sgemm bits {m}x{k}x{n} ({i},{j})"
+					);
+				}
+			}
+			// independent bound, different accumulation order
+			for j in 0..n {
+				for i in 0..m {
+					let want = alpha as f64 * comp_sum32((0..k).map(|l| a[l * acs + i] * b[j * bcs + l]))
+						+ if beta == 0.0 { 0.0 } else { (beta * c0[j * ccs + i]) as f64 };
+					let scale = comp_sum32((0..k).map(|l| (a[l * acs + i] * b[j * bcs + l]).abs()))
+						+ c0[j * ccs + i].abs() as f64;
+					let tol = f32::EPSILON as f64 * (k.max(1) as f64) * 8.0 * scale + 1e-40;
+					assert!((c[j * ccs + i] as f64 - want).abs() <= tol, "sgemm bound ({i},{j})");
+				}
+			}
+		}
+	}
+}
+
+#[test]
+fn gemm_tiled_bit_identical_to_gemm() {
+	let mut rng = Lcg(36);
+	// sizes crossing every tile boundary: exact multiples, tails in m,
+	// n, both, and tiny
+	for &(m, k, n) in &[(8usize, 8usize, 8usize), (4, 4, 4), (12, 7, 8), (9, 5, 10), (7, 3, 6), (3, 2, 3), (1, 1, 1), (0, 0, 0), (16, 16, 5), (5, 16, 16)] {
+		let (acs, bcs, ccs) = (m + 1, k + 2, m + 3);
+		let a = rng.mat_f32(m, k, acs);
+		let b = rng.mat_f32(k, n, bcs);
+		let c0 = rng.mat_f32(m, n, ccs);
+		for (alpha, beta) in [(1.0, 0.0), (-0.7, 0.4), (0.3, 1.0)] {
+			let mut c1 = c0.clone();
+			sgemm_colaxpy(alpha, m, k, n, &a, acs, &b, bcs, beta, &mut c1, ccs);
+			let mut cd = c0.clone();
+			sgemm(alpha, m, k, n, &a, acs, &b, bcs, beta, &mut cd, ccs);
+			for j in 0..n {
+				for i in 0..m {
+					assert_eq!(c1[j * ccs + i].to_bits(), cd[j * ccs + i].to_bits(), "dispatcher vs colaxpy");
+				}
+			}
+			let mut c2 = c0.clone();
+			sgemm_tiled(alpha, m, k, n, &a, acs, &b, bcs, beta, &mut c2, ccs);
+			let mut c3 = c0.clone();
+			sgemm_col4(alpha, m, k, n, &a, acs, &b, bcs, beta, &mut c3, ccs);
+			for j in 0..n {
+				for i in 0..m {
+					assert_eq!(
+						c1[j * ccs + i].to_bits(),
+						c2[j * ccs + i].to_bits(),
+						"tiled vs column-saxpy {m}x{k}x{n} ({i},{j})"
+					);
+					assert_eq!(
+						c1[j * ccs + i].to_bits(),
+						c3[j * ccs + i].to_bits(),
+						"col4 vs column-saxpy {m}x{k}x{n} ({i},{j})"
+					);
+				}
+			}
+		}
+	}
+}
+
+#[test]
+#[should_panic(expected = "storage too short")]
+fn gemm_short_storage_panics() {
+	sgemm(1.0, 2, 2, 2, &[1.0; 4], 2, &[1.0; 3], 2, 0.0, &mut [0.0; 4], 2);
+}

@@ -86,7 +86,8 @@ re-derivation of the project goals. The decisions, in plain terms:
   3.5–4×, iamax 1.4–1.6×, on all three CI machines). The full build
   list with evidence per row is `docs/blas-layer-plan-2026-07.md`,
   and the layer has its home: the `blas/` crate — one folder per
-  BLAS level, one file per function, the plan table in its README.
+  BLAS level, one file per routine per number type in classic BLAS
+  naming (daxpy/saxpy/…), the plan tables in its README.
 - **The f32 BLAS layer is built** (2026-07-19): the tuned f64 layer
   cloned function-for-function into single precision — same loops,
   same tests, same identical-bits-everywhere guarantee (checked on

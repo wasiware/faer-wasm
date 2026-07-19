@@ -2,8 +2,11 @@
 
 The wasm-native BLAS layer, built as its own finished product per the
 2026-07-18 direction reset: the LAPACK-layer kernels re-route their
-bulk work onto this crate as it fills in. One file per function, one
-folder per level; this README is the plan of record for the layer.
+bulk work onto this crate as it fills in. One file per BLAS routine
+per number type in netlib naming (`daxpy.rs`, `saxpy.rs`, … —
+convention: `src/l1/README.md`), one folder per level; this README is
+the plan of record for the layer. Companion maps: `src/README.md`
+(who calls whom), `tests/README.md` (the measured scoreboard).
 
 **Status: the f64 layer is COMPLETE and TUNED — campaign closed
 2026-07-19** (f64, unit stride — callers pass contiguous column
@@ -36,9 +39,9 @@ implementation-dependent, so shipping them trades away cross-target
 bit-identity — an architect decision, recorded in ROADMAP.
 
 **The f32 layer is built** (2026-07-19, Andy: "same treatment as
-f64") — `src/f32/`, the tuned f64 layer cloned one-for-one: same
-files, same loop shapes, same testing contract, on four f32 lanes per
-register (`f32::lanes::F32x4`, bit-identical native emulation). 23
+f64") — the tuned f64 layer cloned one-for-one (the s-routines): same
+shapes, same testing contract, on four f32 lanes per
+register (`lanes::F32x4`, bit-identical native emulation). 23
 functions, 30 mirrored tests (60 crate-wide), 21 f32 determinism
 probes; reduction bounds check against an f64-accumulated reference.
 Deliberate differences, both measured: the gemm register tile covers
@@ -46,7 +49,7 @@ Deliberate differences, both measured: the gemm register tile covers
 tile/col4 dispatch threshold is 3 MB of A — the f32 crossover raced
 on both runner draws (tiled unanimous through n=512, col4 unanimous
 at 1024; the container said the opposite and was overruled).
-Consumer path: `faer_wasm_blas::f32::level{1,2,3}`. Runner rooflines
+Consumer path: the s-prefixed routines in `faer_wasm_blas::l{1,2,3}`. Runner rooflines
 in `../docs/blas-ab-2026-07.md` step 10: f32 arithmetic peak ~1.8×
 f64's, the L3 family at the same fractions of it (48–58%, symm_left
 79–82%), reductions on the read path, 21 probes bit-identical on
@@ -160,7 +163,12 @@ deferred at the campaign close (determinism trade-off; see status
 above). Banded/packed forms are not planned — no consumer demand.
 Evidence per row: `../docs/blas-ab-2026-07.md`.
 
-## Level 1 — `src/level1/`, `src/f32/level1/`
+The type columns map to the routine-name prefixes (d/s/z/c — the
+full convention with the per-routine deviations from reference BLAS:
+`src/l1/README.md`); a row names the routine family, so the f64 cell
+of `axpy` describes `daxpy`, the f32 cell `saxpy`.
+
+## Level 1 — `src/l1/`
 
 | BLAS | mathematical name | f64 | f32 | c64 | c32 |
 |---|---|---|---|---|---|
@@ -175,7 +183,7 @@ Evidence per row: `../docs/blas-ab-2026-07.md`.
 | `iamax` | index of the largest element | RS | RS | — | — |
 | `rotg` | generate a plane rotation | G | G | — | — |
 
-## Level 2 — `src/level2/`, `src/f32/level2/`
+## Level 2 — `src/l2/`
 
 | BLAS | mathematical name | f64 | f32 | c64 | c32 |
 |---|---|---|---|---|---|
@@ -186,7 +194,7 @@ Evidence per row: `../docs/blas-ab-2026-07.md`.
 | `syr` / `syr2` | symmetric rank-1/2 updates | CA | CA | — | — |
 | `trsv` | triangular solve, one vector | DCA+FI | DCA+FI | — | — |
 
-## Level 3 — `src/level3/`, `src/f32/level3/`
+## Level 3 — `src/l3/`
 
 | BLAS | mathematical name | f64 | f32 | c64 | c32 |
 |---|---|---|---|---|---|
