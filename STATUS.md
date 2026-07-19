@@ -5,7 +5,7 @@ what do we ship, and how good is it?** Updated at the end of every
 working session. Details and evidence live in `docs/` and the README
 evidence grid; this page is the summary you can hold in your head.
 
-Last updated: 2026-07-18.
+Last updated: 2026-07-19.
 
 ## 1. What we changed in faer itself
 
@@ -87,10 +87,11 @@ re-derivation of the project goals. The decisions, in plain terms:
   list with evidence per row is `docs/blas-layer-plan-2026-07.md`,
   and the layer has its home: the `blas/` crate — one folder per
   BLAS level, one file per function, the plan table in its README.
-- **The f64 tuning pass is under way and paying off** (2026-07-18/19):
-  before cloning the layer into the other number types, we're making
-  the f64 loops fast (Andy's revised sequencing — the clones then
-  inherit the speed for free). Three rounds so far. (1) Matrix
+- **The f64 tuning pass is DONE — campaign closed 2026-07-19**:
+  before cloning the layer into the other number types, the f64
+  loops were made fast (Andy's revised sequencing — the clones
+  inherit the speed for free). Four rounds, every verdict backed by
+  two CI machines. (1) Matrix
   multiply got two tuned shapes — a register-tiled version for small
   matrices and a stream-friendly four-column version for large — and
   now **beats faer at every size we measure** (1.25–1.8×, confirmed
@@ -124,18 +125,20 @@ re-derivation of the project goals. The decisions, in plain terms:
   decision, because wasm's relaxed FMA rounds differently on
   different hardware, which would trade away our identical-results-
   everywhere guarantee if shipped as the default.
+- **The f64 BLAS layer is COMPLETE** (2026-07-18): Level 3's six
   matrix–matrix functions landed the same way — matrix multiply is
   literally "matrix × vector, once per column", and so on down; the
   whole 23-function layer is four loop shapes plus one scalar
-  function. Tested (27 tests), identical bits native/wasm on every
-  check (21 probes), and speed-scored: the matrix–matrix ops run at
-  34–44% of the machine's arithmetic speed limit — matching what the
-  original experiment measured for the simple loop that beat faer, and
-  the headroom the tuning pass is now chasing (see the bullet above).
-  Two CI machines agreed within 1% on every row. Andy's sequencing is
-  the plan of record — revised same day to tune-first: tune and
-  benchmark f64, then the other number types, and no LAPACK work
-  until the BLAS layer is done.
+  function. Tested (30 tests), identical bits native/wasm on every
+  check (21 probes), and speed-scored: at build time the
+  matrix–matrix ops ran at 34–44% of the machine's arithmetic speed
+  limit — matching what the original experiment measured for the
+  simple loop that beat faer, and the headroom the tuning pass has
+  since claimed (see the bullet above). Two CI machines agreed within
+  1% on every row. Andy's sequencing is the plan of record — revised
+  same day to tune-first: tune and benchmark f64 (now done), then the
+  other number types, and no LAPACK work until the BLAS layer is
+  done.
 - **Level 2 is built** (2026-07-18): all seven matrix–vector functions
   (multiply, transpose multiply, rank-1/2 updates, symmetric multiply,
   triangular multiply and solve), each one literally a loop of Level-1
@@ -144,10 +147,9 @@ re-derivation of the project goals. The decisions, in plain terms:
   where the math allows, independent cross-checks everywhere, solves
   verified by multiplying back), identical bits native/wasm on all
   checks. Speed on the CI machines: the rank-1 updates run at 83–100%
-  of the machine's limit; the multiply-vector family sits near half of
-  it with two known fusion levers recorded for a later tuning pass —
-  we deliberately measure the LAPACK re-route first to see what
-  actually matters end-to-end.
+  of the machine's limit; the multiply-vector family sat near half of
+  it at build time — the tuning pass (bullet above) has since roughly
+  doubled it.
 - **Level 1 is built** (2026-07-18): all ten vector functions, tested
   (12 tests: exact bit-agreement where the math allows, error-bounded
   elsewhere) and speed-scored on the CI machines — the in-place ops

@@ -14,8 +14,10 @@
 //! add order stays fully ascending — bit-identical to the plain
 //! sweep; for LOWER the out-of-group adds now precede the in-group
 //! adds — a deterministic, documented reorder (the tests' scalar
-//! replay mirrors it). Fused-FMA variant lands with the relaxed-simd
-//! build campaign. Transpose forms: not built — no consumer yet.
+//! replay mirrors it). The fused-FMA variant is DEFERRED at the f64
+//! campaign close (relaxed-madd rounding is implementation-dependent
+//! — architect decision, recorded in ROADMAP). Transpose forms: not
+//! built — no consumer yet.
 
 use super::check_mat;
 use crate::kernels::axpy4;

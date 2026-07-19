@@ -8,8 +8,9 @@
 //! column-axpy loop (bit-for-bit tested). Tail columns fall back to
 //! Level 1 `axpy`. The transpose form is one `dot` reduction stream
 //! per column. Evidence: docs/blas-ab-2026-07.md. The fused-FMA
-//! variant (measured better in the step-1 race) lands with the
-//! relaxed-simd build campaign.
+//! variant (measured better in the step-1 race) is DEFERRED at the
+//! f64 campaign close (relaxed-madd rounding is implementation-
+//! dependent — architect decision, recorded in ROADMAP).
 
 use super::{check_mat, scale_y};
 use crate::kernels::axpy4in;
@@ -17,6 +18,7 @@ use crate::level1::{axpy, dot};
 
 /// y ← αAx + βy. A is nrows×ncols at column stride `cs`;
 /// x has ncols elements, y has nrows.
+#[allow(clippy::too_many_arguments)]
 pub fn gemv(
 	alpha: f64,
 	nrows: usize,
@@ -56,6 +58,7 @@ pub fn gemv(
 
 /// y ← αAᵀx + βy. A is nrows×ncols at column stride `cs`;
 /// x has nrows elements, y has ncols.
+#[allow(clippy::too_many_arguments)]
 pub fn gemv_t(
 	alpha: f64,
 	nrows: usize,

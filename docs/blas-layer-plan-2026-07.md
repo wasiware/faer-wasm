@@ -1,5 +1,10 @@
 # BLAS-layer implementation plan (architect-approved format, 2026-07-18)
 
+> **Historical document.** This is the pre-build plan; the layer has
+> since been built and tuned. The living plan of record — including
+> the tuned per-op loop shapes — is `blas/README.md`; the campaign
+> evidence is `docs/blas-ab-2026-07.md` steps 3–9.
+
 The build list for the BLAS campaign: every operation the layer ships,
 classified by implementation. The whole layer reduces to **four SIMD
 streaming-loop shapes plus one scalar function**:

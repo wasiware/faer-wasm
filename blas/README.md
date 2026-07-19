@@ -5,54 +5,44 @@ The wasm-native BLAS layer, built as its own finished product per the
 bulk work onto this crate as it fills in. One file per function, one
 folder per level; this README is the plan of record for the layer.
 
-**Status: Level 1 implemented** (f64, unit stride — callers pass
-contiguous column slices; strided access defeats streaming and no
-consumer wants it). All ten functions shipped with correctness tests
-(`tests/level1.rs`, 12 tests) and runner-measured roofline rows
-(`../bench/l1-roofline.mjs`): the read-modify-write streams run at
-81–100% of the machine's fastest same-run stream, copy/dot at the
-read-path (triad) ceiling; the reductions run 4 accumulator registers
-since tuning lever 2 — runner-confirmed on both draws: dot AT the
-triad read ceiling, nrm2/asum at 73–97% of it (was 60–80%).
-Reductions are bit-identical
-native ↔ wasm by construction (`src/lanes.rs` emulates the SIMD lane
-structure elementwise off-wasm — verified 4/4 probes on the container
-and both runner draws). Full record: `../docs/blas-ab-2026-07.md`
-step 3.
+**Status: the f64 layer is COMPLETE and TUNED — campaign closed
+2026-07-19** (f64, unit stride — callers pass contiguous column
+slices; strided access defeats streaming and no consumer wants it).
+23 functions, 30 tests, 21 cross-target determinism probes, a
+runner-measured roofline row for every operation, every tuning verdict
+backed by two reference-machine draws. Full record:
+`../docs/blas-ab-2026-07.md` steps 3–9. Where the layer landed:
 
-**Level 2 is implemented** the same way (f64, 9 tests, 8/8
-determinism probes bit-identical, runner roofline in the same doc,
-step 4): every function is a loop of Level 1 calls over column slices
-— the classification table below is literally the module structure.
-The rank-1 updates run at 83–100% of ceiling; gemv ships 4-column
-fan-in blocking since the tuning campaign — runner-confirmed 29–31
-GB/s vs ~17 before — and gemv_t rose to 22–29 GB/s untouched, by
-inheriting the 4-accumulator dot through composition. Remaining
-recorded levers: fused symv pass (in test), trmv/trsv blocking.
+- **Level 1**: read-modify-write streams at 81–100% of the machine's
+  fastest same-run stream; dot AT the triad read ceiling, nrm2/asum at
+  73–97% of it (4-accumulator reductions). Reductions are
+  bit-identical native ↔ wasm BY CONSTRUCTION (`src/lanes.rs` emulates
+  the SIMD lane structure elementwise off-wasm).
+- **Level 2**: rank-1 updates 79–100% of ceiling; gemv 29–31 GB/s
+  (was ~17) via 4-column fan-in; gemv_t 22–29 GB/s untouched — it
+  inherited the 4-accumulator dot through composition; symv ~2× via
+  the fused 4-column pass; trmv/trsv ~1.3× via fan-in blocking.
+- **Level 3**: the family runs at 48–56% of the machine's arithmetic
+  peak (was 34–44%), gemm beats faer's blocked gemm at every measured
+  size (1.25–1.8×, size-dispatched tile/fan-out), and symm_left —
+  riding the fused symv — reaches **84–86% of peak**, the best
+  matrix–matrix row on the board.
 
-**Level 3 is implemented — the f64 layer is complete** (2026-07-18):
-23 functions, 30 tests, 21 cross-target determinism probes (all
-bit-identical native ↔ wasm on the container and every runner draw),
-roofline rows for every operation (`../docs/blas-ab-2026-07.md` steps
-3–5).
-
-**The f64 tuning campaign is in progress** (steps 6–7 in the same
-doc): gemm now dispatches a 4×4 register tile / 4-column fan-out by
-size and beats faer's blocked gemm at every measured size (two runner
-draws); the reductions run 4 accumulators; the shared blocked kernels
-(`src/kernels.rs`) carry the fan-out/fan-in shapes through gemv and
-the rest of Level 3 — all runner-confirmed on two draws (L3 family
-48–56% of arithmetic peak, was 34–44%; runs 29669397117/29669395117).
-Remaining levers are listed in ROADMAP.
+One candidate was raced and REFUTED (fused single-pass iamax — slower
+than the shipped two-pass shape on both draws; reverted, loss recorded
+in its module docs). The per-op fused-FMA variants are **deferred by
+the campaign close**: wasm relaxed-madd rounding is
+implementation-dependent, so shipping them trades away cross-target
+bit-identity — an architect decision, recorded in ROADMAP.
 
 Sequencing (Andy, 2026-07-18, revised same day; ROADMAP "BLAS
-campaign sequencing"): finish tuning + benchmarking f64 first, then
-clone the tuned layer into the other number types (f32, c64), then —
-only then — LAPACK work resumes.
+campaign sequencing"): f64 tuned first — DONE; next the tuned layer is
+cloned into the other number types (f32, c64), then — only then —
+LAPACK work resumes.
 
 Gaps: f32/c64 variants queued; c32 undecided (never shipped anywhere
-in the project); FMA variants per-op-measured as built; transpose
-forms of gemm/trmv/trsv/trmm/trsm not built (no consumer yet); the
+in the project); FMA variants deferred (above); transpose forms of
+gemm/trmv/trsv/trmm/trsm not built (no consumer yet); the
 `cd blas && cargo test` CI gate line still needs adding to the
 workflow (session tokens can't edit workflow files).
 
@@ -120,22 +110,26 @@ arithmetic, inlined branch-free into the sweep loops that call it
 (LAPACK's overflow guards kept — proven numerics).
 
 The tuning campaign (2026-07-18/19) blocks the column shapes four
-columns at a time without changing any of them — two shared kernels in
-`src/kernels.rs` do all the work: **fan-out** (one source column
-streamed once into four destination columns — source traffic 4× down)
-and **fan-in** (four source columns accumulated in one pass over the
-destination — destination read-modify-write traffic 4× down); gemm
-additionally carries a 4×4 register tile for small matrices. Both
+columns at a time without changing any of them — the shared kernels in
+`src/kernels.rs` do the work: **fan-out** (`axpy4`: one source column
+streamed once into four destination columns — source traffic 4× down),
+**fan-in** (`axpy4in`: four source columns accumulated in one pass
+over the destination — destination read-modify-write traffic 4× down),
+and the **fused symv pass** (`axpy_dot`/`axpy_dot4`: one column load
+serves both triangles of the symmetric update); gemm additionally
+carries a 4×4 register tile for small matrices. The fan-out/fan-in
 kernels preserve the per-element rounding sequence, so tuned ops stay
 bit-for-bit against their plain column-axpy replays (the two
 triangular right-side cases whose elimination order forbids that
-document their reorder and the tests mirror it). The table rows note
-which blocked shape each op ships with.
+document their reorder and the tests mirror it; symv's fused pass
+legitimately re-folds its reduction and is bounds-tested). The table
+rows note which blocked shape each op ships with.
 
-Per-operation FMA variant choice (measured, step-1 three-way race):
-fused for `trmm`/`trsm`/`gemv`, plain for `gemm`/`syrk`; the rest
-measured as built. Banded/packed forms are not planned — no consumer
-demand. Evidence per row: `../docs/blas-ab-2026-07.md`.
+The step-1 three-way race measured fused-FMA better for
+`trmm`/`trsm`/`gemv` and harmful for `syrk` — those variants are
+deferred at the campaign close (determinism trade-off; see status
+above). Banded/packed forms are not planned — no consumer demand.
+Evidence per row: `../docs/blas-ab-2026-07.md`.
 
 ## Level 1 — `src/level1/`
 

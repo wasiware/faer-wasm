@@ -1,9 +1,15 @@
-//! Level 3: matrix–matrix operations, every one a loop of Level 1/2
-//! calls over the right-hand matrix's columns — gemm is gemv per
-//! column, symm is symv per column, trmm/trsm (left side) are
+//! Level 3: matrix–matrix operations, every one structurally a loop of
+//! Level 1/2 calls over the right-hand matrix's columns — gemm is gemv
+//! per column, symm is symv per column, trmm/trsm (left side) are
 //! trmv/trsv per column, the rank-k updates and right-side triangular
-//! forms are truncated column-axpy sweeps. Same matrix convention as
-//! Level 2 (column-major slice + column stride, unit row stride).
+//! forms are truncated column-axpy sweeps. Since the 2026-07-19 tuning
+//! campaign every op runs its columns four at a time through the
+//! shared blocked kernels (`crate::kernels`) or a lockstep column walk
+//! — bit-identical to the plain composition wherever the elimination
+//! order allows (the two right-side reorders are documented in their
+//! files); gemm additionally size-dispatches a 4×4 register tile.
+//! Same matrix convention as Level 2 (column-major slice + column
+//! stride, unit row stride).
 //!
 //! Scope (gap-lined in ../../README.md): no-transpose forms only —
 //! Aᵀ variants of gemm have no consumer yet (syrk covers A·Aᵀ).

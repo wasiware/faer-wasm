@@ -18,6 +18,7 @@ use crate::kernels::{axpy_dot, axpy_dot4};
 
 /// y ← αAx + βy, A symmetric n×n at column stride `cs`, with the
 /// `upper` (or lower) triangle stored.
+#[allow(clippy::too_many_arguments)]
 pub fn symv(
 	alpha: f64,
 	n: usize,

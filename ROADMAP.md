@@ -34,25 +34,25 @@ until blas is done." Revised same day (Andy: "Maybe we should tune and
 benchmark f64 before we implement the other types?" — yes: the type
 clones inherit tuned shapes for free instead of re-tuning ×3):
 1. **f64 Level 3** completes the f64 layer — DONE 2026-07-18;
-2. **tune + benchmark f64** — IN PROGRESS. Done: gemm dispatch
-   (tiled4x4 ≤1.5MB of A / col4 above — beats faer 1.25–1.8× at every
-   size, two runner draws, docs step 6); 4-accumulator reductions —
-   RUNNER CONFIRMED both draws, dot now AT the triad read ceiling,
-   nrm2/asum 73–97% of triad, gemv_t inherited the gain through
-   composition; blocked shapes carried through gemv + all of Level 3
-   via shared fan-out/fan-in kernels (`blas/src/kernels.rs`) — RUNNER
-   CONFIRMED both draws: gemv 29–31 GB/s (was ~17), L3 family 48–56%
-   of peak (was 34–44%) (runs 29669397117/29669395117, docs step 7).
-   Fused 4-column symv + blocked trmv/trsv — RUNNER CONFIRMED both
-   draws (runs 29670218479/29670215776): symv ~2×, symm_left ~1.8×
-   (84–86% of peak, best L3 row on the board), trmv/trsv ~1.3×. The
-   fused-iamax candidate was raced and REFUTED on the same draws
-   (reverted; negative result recorded in the module docs).
-   Remaining: per-op FMA variants (relaxed-simd build — NOTE: wasm
-   relaxed-madd rounding is implementation-dependent, so shipping it
-   trades away the cross-target bit-identity guarantee; architect
-   call needed on default-vs-variant before building); then the
-   closing faer race + roofline re-run;
+2. **tune + benchmark f64** — DONE, CAMPAIGN CLOSED 2026-07-19 (Andy:
+   "finish up ... merge and close"). Six levers, every verdict backed
+   by two runner draws (docs steps 6–9): gemm dispatch (tiled4x4
+   ≤1.5MB of A / col4 above — beats faer 1.25–1.8× at every size);
+   4-accumulator reductions (dot AT the triad read ceiling, nrm2/asum
+   73–97% of triad, gemv_t inherited the gain through composition);
+   blocked fan-out/fan-in shapes through gemv + all of Level 3
+   (`blas/src/kernels.rs` — gemv 29–31 GB/s was ~17, L3 family 48–56%
+   of peak was 34–44%); fused 4-column symv (symv ~2×, symm_left
+   84–86% of peak — best L3 row on the board); blocked trmv/trsv
+   (~1.3×). One candidate REFUTED and reverted (fused single-pass
+   iamax — loss recorded in its module docs). The roofline re-run IS
+   the final draw pair; the gemm-vs-faer race stands from step 6
+   (gemm code unchanged since). DEFERRED by the close, needs an
+   architect decision before any build: per-op fused-FMA variants —
+   wasm relaxed-madd rounding is implementation-dependent, so
+   shipping them (default or variant) trades away the cross-target
+   bit-identity guarantee; step-1 evidence says they'd help
+   trmm/trsm/gemv and hurt syrk;
 3. **the other number types** — the tuned layer cloned into f32 and
    c64 (c32: decide when reached — nothing has ever shipped c32);
 4. **only then** does any LAPACK-layer work resume (the kernel

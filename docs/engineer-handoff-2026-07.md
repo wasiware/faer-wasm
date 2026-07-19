@@ -65,19 +65,17 @@ evidence log: docs/blas-ab-2026-07.md steps 1–6. Scoreboard: STATUS §3.
   gemm-tune-ab.mjs (4-way race). Old race harnesses (run_blas_ab,
   run_l1_ab) still exported — run_blas_ab(4,0) = faer gemm reference.
 
-## Tuning campaign state (task #22 in_progress)
-- Lever 1 SHIPPED: gemm dispatches tiled4x4 (A ≤ 1.5 MB) / col4 —
-  beats faer 1.25–1.8× everywhere, 2 runner draws (docs step 6).
-- Lever 2 SHIPPED, RUNNER CONFIRMATION PENDING: 4-accumulator
-  asum/nrm2/dot (container: 2.2×/2.1×/1.4× at n=2048). Confirm by
-  re-running l1-roofline draws (procedure above); expect reductions
-  to rise from 40–52% toward the read ceiling.
-- Remaining levers (ROADMAP): tiled/col4 shapes → symm/syrk/syr2k/
-  trmm/trsm; 2-column gemv; fused symv; iamax fused pass; per-op FMA
-  variants (needs `-C target-feature=+simd128,+relaxed-simd` build;
-  step-1 verdicts: fused helps trmm/trsm/gemv, hurts syrk, neutral
-  gemm). Then re-run all rooflines + the faer race, update docs step
-  tables, STATUS, README evidence grid.
+## Tuning campaign state (task #22 — CLOSED 2026-07-19)
+Six levers shipped, every verdict two runner draws (docs steps 6–9):
+gemm dispatch (tiled4x4 ≤1.5 MB of A / col4), 4-accumulator
+reductions (dot at the read ceiling), fan-out/fan-in blocked shapes
+through gemv + all Level 3 (`blas/src/kernels.rs`), fused 4-column
+symv (symm_left 84–86% of peak), blocked trmv/trsv. Fused iamax
+raced and REFUTED (reverted, loss recorded in its module docs).
+FMA variants DEFERRED — architect decision on the determinism
+trade-off (relaxed-madd rounding is implementation-dependent); the
+step-1 evidence and the deferral are recorded in ROADMAP. Next per
+sequencing: clone the tuned layer into f32 and c64.
 
 ## Register (Andy)
 Lead with the direct answer ("Faster."), plain adult language, no

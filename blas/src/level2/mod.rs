@@ -1,9 +1,12 @@
 //! Level 2: matrix–vector operations, every one a composition of the
 //! Level 1 streams over column slices — "column-axpy" (and its
 //! dot-per-column transpose twin), or "divide-then-column-axpy" for the
-//! triangular solve. One Level 1 call per column amortizes the safe
-//! wrapper over O(n) streamed elements; the SIMD hot loops live in
-//! level1 under their `target_feature` annotations.
+//! triangular solve. Since the 2026-07-19 tuning campaign the
+//! multiply-vector family runs its columns four at a time through the
+//! shared blocked kernels (`crate::kernels`) — same per-element math,
+//! 4× less vector read-modify-write traffic; tails and the rank-1/2
+//! updates stay one Level 1 call per column. The SIMD hot loops live
+//! in level1/kernels under their `target_feature` annotations.
 //!
 //! Matrix convention (the whole crate): column-major slice with a
 //! column stride — column `j` of an `nrows × ncols` matrix `a` with

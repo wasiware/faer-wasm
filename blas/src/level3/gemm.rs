@@ -206,6 +206,7 @@ pub fn gemm_col4(
 /// (stride bcs), `cp` at C[i, j] (stride ccs); 4 rows and 4 B/C
 /// columns must be in bounds.
 #[cfg_attr(target_arch = "wasm32", target_feature(enable = "simd128"))]
+#[allow(clippy::too_many_arguments)]
 unsafe fn tile_4x4(
 	alpha: f64,
 	k: usize,

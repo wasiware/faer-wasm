@@ -14,9 +14,12 @@
 //! For LOWER the resulting per-element add order is identical to the
 //! plain sweep (ascending k throughout); for UPPER the in-group adds
 //! now precede the out-of-group adds — a deterministic, documented
-//! reorder (the tests' scalar replay mirrors it). Fused-FMA variant
-//! (measured better in the step-1 race) lands with the relaxed-simd
-//! build campaign. Transpose forms: not built — no consumer yet.
+//! reorder (the tests' scalar replay mirrors it). A fused-FMA variant
+//! measured better in the step-1 race but is DEFERRED at the f64
+//! campaign close: wasm relaxed-madd rounding is implementation-
+//! dependent, so it trades away cross-target bit-identity — an
+//! architect decision, recorded in ROADMAP. Transpose forms: not
+//! built — no consumer yet.
 
 use super::check_mat;
 use crate::kernels::axpy4;
