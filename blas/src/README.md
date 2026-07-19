@@ -1,8 +1,10 @@
 # src/ — the call graph
 
-Which routines call which routines — the 23 routines of the crate
-README's tables, nothing below that level. Covers both types (the f64
-and f32 layers have identical structure).
+Which routines call which routines — the crate README's 23 routines,
+nothing below that level; 24 nodes because gemv's transpose twin is
+drawn separately (it depends on dot where gemv depends on axpy —
+they share one file and one count everywhere else). Covers both
+types (the f64 and f32 layers have identical structure).
 
 ```mermaid
 graph TD
