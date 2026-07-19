@@ -28,6 +28,9 @@ struct State {
     a32: Mat<f32>,
     b32: Mat<f32>,
     rhs32: Mat<f32>,
+    // c32 twins (ac/bc cast) for the complex market races
+    ac32: Mat<faer::c32>,
+    bc32: Mat<faer::c32>,
 }
 
 struct StateCell(core::cell::UnsafeCell<Option<State>>);
@@ -76,7 +79,52 @@ pub extern "C" fn setup(n: usize) {
     let a32 = Mat::from_fn(n, n, |i, j| a[(i, j)] as f32);
     let b32 = Mat::from_fn(n, n, |i, j| b[(i, j)] as f32);
     let rhs32 = Mat::from_fn(n, 1, |i, j| rhs[(i, j)] as f32);
-    unsafe { *STATE.0.get() = Some(State { a, b, sym, tri, rhs, ac, bc, rhsc, a32, b32, rhs32 }) }
+    let ac32 = Mat::from_fn(n, n, |i, j| faer::c32::new(ac[(i, j)].re as f32, ac[(i, j)].im as f32));
+    let bc32 = Mat::from_fn(n, n, |i, j| faer::c32::new(bc[(i, j)].re as f32, bc[(i, j)].im as f32));
+    unsafe {
+        *STATE.0.get() =
+            Some(State { a, b, sym, tri, rhs, ac, bc, rhsc, a32, b32, rhs32, ac32, bc32 })
+    }
+}
+
+/// faer's blocked complex gemm rows for the market race against the
+/// blas layer's zgemm/cgemm (close-out campaign): matmul() into a
+/// per-call zeroed Mat, mirroring run_blas_ab(4,0)'s shape. variant:
+/// 0 = c64, 1 = c32.
+#[no_mangle]
+pub extern "C" fn run_gemm_faer_cplx(variant: usize) -> f64 {
+    use faer::linalg::matmul::matmul;
+    use faer::Accum;
+    let s = state();
+    match variant {
+        0 => {
+            let n = s.ac.nrows();
+            let mut c = Mat::<faer::c64>::zeros(n, n);
+            matmul(
+                c.as_mut(),
+                Accum::Replace,
+                s.ac.as_ref(),
+                s.bc.as_ref(),
+                faer::c64::new(1.0, 0.0),
+                Par::Seq,
+            );
+            c[(0, 0)].re + c[(n - 1, n - 1)].im
+        }
+        1 => {
+            let n = s.ac32.nrows();
+            let mut c = Mat::<faer::c32>::zeros(n, n);
+            matmul(
+                c.as_mut(),
+                Accum::Replace,
+                s.ac32.as_ref(),
+                s.bc32.as_ref(),
+                faer::c32::new(1.0, 0.0),
+                Par::Seq,
+            );
+            (c[(0, 0)].re + c[(n - 1, n - 1)].im) as f64
+        }
+        _ => f64::NAN,
+    }
 }
 
 #[no_mangle]

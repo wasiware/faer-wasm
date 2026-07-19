@@ -1,13 +1,17 @@
 //! Tuned multi-stream kernels shared across levels and types (tuning
-//! campaign, 2026-07; d-prefixed = f64 on F64x2 lanes, s-prefixed =
-//! f32 on F32x4 lanes — same shapes at each lane width): the loop
-//! shapes that survived racing on the reference runners. `daxpy4` fans one source column OUT into four destinations
-//! (the gemm `col4` shape — cuts source traffic 4×); `daxpy4in` fans
-//! four source columns IN to one destination (cuts destination
-//! read-modify-write traffic 4×). Both preserve the per-element
-//! rounding sequence of the four plain `axpy` passes they replace, so
-//! callers stay bit-for-bit interchangeable with their column-axpy
-//! references.
+//! campaign, 2026-07) — the loop shapes that survived racing on the
+//! reference runners, one section per number type at its lane
+//! geometry: d = f64 on F64x2, s = f32 on F32x4, z = c64 (one
+//! complex per F64x2), c = c32 (two complexes per F32x4). `*axpy4`
+//! fans one source column OUT into four destinations (the gemm
+//! `col4` shape — cuts source traffic 4×); `*axpy4in` fans four
+//! source columns IN to one destination (cuts destination
+//! read-modify-write traffic 4×); `*axpy_dot*` are the fused
+//! symv/hemv passes. The fan-out/fan-in kernels preserve the
+//! per-element rounding sequence of the plain passes they replace,
+//! so callers stay bit-for-bit interchangeable with their
+//! column-axpy references; the complex product forms are bit-exact
+//! rewrites of the canonical scalar order (see c64.rs/c32.rs).
 
 use crate::lanes::F64x2;
 
@@ -698,6 +702,123 @@ pub(crate) unsafe fn caxpy_dotc(
 		*y.add(i) = *y.add(i) + t * av;
 		s = s + av.conj() * *x.add(i);
 		i += 1;
+	}
+	s
+}
+
+/// Four fused zhemv column passes sharing one stream over x and y
+/// (candidate, 2026-07-19 close-out race): y[i] += Σᵤ tᵤ·aᵤ[i]
+/// (accumulated in u order into the loaded y value) while each
+/// accᵤ += conj(aᵤ[i])·x[i]. One y load/store and one x load per
+/// complex serve four columns — the daxpy_dot4 shape at complex
+/// lane geometry.
+///
+/// # Safety
+/// All six array pointers must be valid for `len` C64s; `y` must not
+/// alias any `aᵤ` or `x`.
+#[cfg_attr(target_arch = "wasm32", target_feature(enable = "simd128"))]
+pub(crate) unsafe fn zaxpy_dotc4(
+	a: [*const C64; 4],
+	t: [C64; 4],
+	x: *const C64,
+	y: *mut C64,
+	len: usize,
+) -> [C64; 4] {
+	let vre = [
+		F64x2::splat(t[0].re),
+		F64x2::splat(t[1].re),
+		F64x2::splat(t[2].re),
+		F64x2::splat(t[3].re),
+	];
+	let vim = [
+		F64x2::pair(-t[0].im, t[0].im),
+		F64x2::pair(-t[1].im, t[1].im),
+		F64x2::pair(-t[2].im, t[2].im),
+		F64x2::pair(-t[3].im, t[3].im),
+	];
+	let ap = [a[0] as *const f64, a[1] as *const f64, a[2] as *const f64, a[3] as *const f64];
+	let xp = x as *const f64;
+	let yp = y as *mut f64;
+	let mut acc = [F64x2::splat(0.0); 4];
+	let mut i = 0usize;
+	while i < len {
+		let xv = F64x2::load(xp.add(2 * i));
+		let xsw = xv.swap();
+		let mut yv = F64x2::load(yp.add(2 * i));
+		for u in 0..4 {
+			let av = F64x2::load(ap[u].add(2 * i));
+			yv = yv.add(av.mul(vre[u]).add(av.swap().mul(vim[u])));
+			acc[u] = acc[u].add(av.dup0().mul(xv).add(av.dup1().mul(xsw).neg1()));
+		}
+		yv.store(yp.add(2 * i));
+		i += 1;
+	}
+	[
+		C64::new(acc[0].lane0(), acc[0].lane1()),
+		C64::new(acc[1].lane0(), acc[1].lane1()),
+		C64::new(acc[2].lane0(), acc[2].lane1()),
+		C64::new(acc[3].lane0(), acc[3].lane1()),
+	]
+}
+
+/// c32 twin of `zaxpy_dotc4` (two complexes per register; one-complex
+/// scalar tail).
+///
+/// # Safety
+/// All six array pointers must be valid for `len` C32s; `y` must not
+/// alias any `aᵤ` or `x`.
+#[cfg_attr(target_arch = "wasm32", target_feature(enable = "simd128"))]
+pub(crate) unsafe fn caxpy_dotc4(
+	a: [*const C32; 4],
+	t: [C32; 4],
+	x: *const C32,
+	y: *mut C32,
+	len: usize,
+) -> [C32; 4] {
+	let vre = [
+		F32x4::splat(t[0].re),
+		F32x4::splat(t[1].re),
+		F32x4::splat(t[2].re),
+		F32x4::splat(t[3].re),
+	];
+	let vim = [
+		F32x4::quad(-t[0].im, t[0].im, -t[0].im, t[0].im),
+		F32x4::quad(-t[1].im, t[1].im, -t[1].im, t[1].im),
+		F32x4::quad(-t[2].im, t[2].im, -t[2].im, t[2].im),
+		F32x4::quad(-t[3].im, t[3].im, -t[3].im, t[3].im),
+	];
+	let ap = [a[0] as *const f32, a[1] as *const f32, a[2] as *const f32, a[3] as *const f32];
+	let xp = x as *const f32;
+	let yp = y as *mut f32;
+	let mut acc = [F32x4::splat(0.0); 4];
+	let mut i = 0usize;
+	while i + 2 <= len {
+		let xv = F32x4::load(xp.add(2 * i));
+		let xsw = xv.swap_pairs();
+		let mut yv = F32x4::load(yp.add(2 * i));
+		for u in 0..4 {
+			let av = F32x4::load(ap[u].add(2 * i));
+			yv = yv.add(av.mul(vre[u]).add(av.swap_pairs().mul(vim[u])));
+			acc[u] = acc[u].add(av.dup_even().mul(xv).add(av.dup_odd().mul(xsw).neg_odd()));
+		}
+		yv.store(yp.add(2 * i));
+		i += 2;
+	}
+	let mut s = [
+		C32::new(acc[0].lane0() + acc[0].lane2(), acc[0].lane1() + acc[0].lane3()),
+		C32::new(acc[1].lane0() + acc[1].lane2(), acc[1].lane1() + acc[1].lane3()),
+		C32::new(acc[2].lane0() + acc[2].lane2(), acc[2].lane1() + acc[2].lane3()),
+		C32::new(acc[3].lane0() + acc[3].lane2(), acc[3].lane1() + acc[3].lane3()),
+	];
+	if i < len {
+		let xi = *x.add(i);
+		let mut yi = *y.add(i);
+		for u in 0..4 {
+			let av = *a[u].add(i);
+			yi = yi + t[u] * av;
+			s[u] = s[u] + av.conj() * xi;
+		}
+		*y.add(i) = yi;
 	}
 	s
 }

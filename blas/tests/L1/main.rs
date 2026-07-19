@@ -1,6 +1,6 @@
-//! Level 1 correctness per the testing contract (../../README.md),
+//! Level 1 correctness per the testing contract (../README.md),
 //! one test file per BLAS routine mirroring src/L1/ (naming
-//! convention: src/L1/README.md). Shared helpers in common.rs.
+//! convention: src/README.md). Shared helpers in common.rs.
 #![allow(non_snake_case)] // test target named for its folder (L1/L2/L3)
 
 mod common;

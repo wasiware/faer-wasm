@@ -11,7 +11,9 @@
 //! wrapper compiled every lane op as an out-of-line call and ran the
 //! reductions 6× slower), so the feature must be enabled on the whole
 //! call chain for the intrinsics to inline. Callers keep the chain by
-//! annotating their own inner loops (see any l1 stream).
+//! annotating their own inner loops (see any L1 stream). The
+//! pair/swap/dup/sign ops at the bottom of each impl are the exact
+//! lane moves the complex layers build their product forms from.
 //! (`v128_load`/`v128_store` are alignment-free by spec; the emulation
 //! reads/writes elementwise.)
 
@@ -120,7 +122,7 @@ mod imp {
 	#[derive(Clone, Copy)]
 	pub struct F64x2([f64; 2]);
 
-	// `unsafe fn` for signature parity with the wasm impl — the l1
+	// `unsafe fn` for signature parity with the wasm impl — the L1
 	// streams call these inside one feature-annotated unsafe inner fn.
 	#[allow(clippy::missing_safety_doc)]
 	impl F64x2 {

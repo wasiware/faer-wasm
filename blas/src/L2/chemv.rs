@@ -53,3 +53,82 @@ pub fn chemv(
 		y[j] = y[j] + t.scale(a[cj + j].re) + alpha * d;
 	}
 }
+
+/// 4-column grouped fused variant (close-out race candidate,
+/// 2026-07-19) — the c32 twin of `zhemv_grouped`; raced against
+/// `chemv` on the reference runners before either ships as the
+/// default.
+#[allow(clippy::too_many_arguments)]
+pub fn chemv_grouped(
+	alpha: C32,
+	n: usize,
+	a: &[C32],
+	cs: usize,
+	upper: bool,
+	x: &[C32],
+	beta: C32,
+	y: &mut [C32],
+) {
+	use crate::kernels::caxpy_dotc4;
+	check_mat(a.len(), n, n, cs);
+	assert_eq!(x.len(), n, "chemv: x length mismatch");
+	assert_eq!(y.len(), n, "chemv: y length mismatch");
+	cscale_y(beta, y);
+	let ap = a.as_ptr();
+	let mut j = 0usize;
+	while j + 4 <= n {
+		let t = [alpha * x[j], alpha * x[j + 1], alpha * x[j + 2], alpha * x[j + 3]];
+		let cols = unsafe {
+			[ap.add(j * cs), ap.add((j + 1) * cs), ap.add((j + 2) * cs), ap.add((j + 3) * cs)]
+		};
+		if upper {
+			let mut d = unsafe { caxpy_dotc4(cols, t, x.as_ptr(), y.as_mut_ptr(), j) };
+			for u in 0..4 {
+				let cj = (j + u) * cs;
+				for i in j..j + u {
+					y[i] = y[i] + t[u] * a[cj + i];
+					d[u] = d[u] + a[cj + i].conj() * x[i];
+				}
+				y[j + u] = y[j + u] + t[u].scale(a[cj + j + u].re) + alpha * d[u];
+			}
+		} else {
+			let mut d = unsafe {
+				caxpy_dotc4(
+					[cols[0].add(j + 4), cols[1].add(j + 4), cols[2].add(j + 4), cols[3].add(j + 4)],
+					t,
+					x.as_ptr().add(j + 4),
+					y.as_mut_ptr().add(j + 4),
+					n - j - 4,
+				)
+			};
+			for u in 0..4 {
+				let cj = (j + u) * cs;
+				for i in j + u + 1..j + 4 {
+					y[i] = y[i] + t[u] * a[cj + i];
+					d[u] = d[u] + a[cj + i].conj() * x[i];
+				}
+				y[j + u] = y[j + u] + t[u].scale(a[cj + j + u].re) + alpha * d[u];
+			}
+		}
+		j += 4;
+	}
+	while j < n {
+		let cj = j * cs;
+		let t = alpha * x[j];
+		let d = if upper {
+			unsafe { crate::kernels::caxpy_dotc(a.as_ptr().add(cj), t, x.as_ptr(), y.as_mut_ptr(), j) }
+		} else {
+			unsafe {
+				crate::kernels::caxpy_dotc(
+					a.as_ptr().add(cj + j + 1),
+					t,
+					x.as_ptr().add(j + 1),
+					y.as_mut_ptr().add(j + 1),
+					n - j - 1,
+				)
+			}
+		};
+		y[j] = y[j] + t.scale(a[cj + j].re) + alpha * d;
+		j += 1;
+	}
+}

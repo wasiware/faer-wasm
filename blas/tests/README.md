@@ -1,7 +1,7 @@
 # tests/ — correctness suites and the bit-identical results
 
 One test file per BLAS routine, mirroring `../src/` (naming:
-`../src/L1/README.md`); `main.rs` per level folder is the Cargo test
+`../src/README.md`); `main.rs` per level folder is the Cargo test
 target, `common.rs` holds the shared generator and the
 higher-precision reference summers. Run with
 `cd blas && cargo test --release` — **144 tests, all green**.

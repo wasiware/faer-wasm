@@ -1,6 +1,5 @@
 use super::common::*;
 use faer_wasm_blas::L2::*;
-use faer_wasm_blas::C32;
 
 #[test]
 fn ctrmv_bit_for_bit_all_variants() {

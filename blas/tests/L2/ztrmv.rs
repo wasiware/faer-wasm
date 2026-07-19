@@ -1,6 +1,5 @@
 use super::common::*;
 use faer_wasm_blas::L2::*;
-use faer_wasm_blas::C64;
 
 #[test]
 fn ztrmv_bit_for_bit_all_variants() {

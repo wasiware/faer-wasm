@@ -4,7 +4,7 @@ The wasm-native BLAS layer, built as its own finished product per the
 2026-07-18 direction reset: the LAPACK-layer kernels re-route their
 bulk work onto this crate as it fills in. One file per BLAS routine
 per number type in netlib naming (`daxpy.rs`, `saxpy.rs`, … —
-convention: `src/L1/README.md`), one folder per level; this README is
+convention: `src/README.md`), one folder per level; this README is
 the plan of record for the layer. Counting convention, used
 everywhere: **23 routines** per real type (netlib names = files; flag
 variants folded, so gemv covers N/T and symm/trmm/trsm cover both
@@ -17,88 +17,34 @@ Hermitian). Companion maps: `src/README.md` (who calls whom),
 `bench/README.md` (the measured benchmarks), `tests/README.md` (the
 bit-identical test results).
 
-**Status: the f64 layer is COMPLETE and TUNED — campaign closed
-2026-07-19** (f64, unit stride — callers pass contiguous column
-slices; strided access defeats streaming and no consumer wants it).
-23 routines (27 operations), 30 tests, 21 determinism probes, a
-runner-measured roofline row for every operation, every tuning verdict
-backed by two reference-machine draws. Full record:
-`../docs/blas-ab-2026-07.md` steps 3–9. Where the layer landed:
+**Status — all four type layers are BUILT; f64 TUNED (campaign
+closed 2026-07-19); complex tuning levers recorded.** Unit stride
+throughout — callers pass contiguous column slices (strided access
+defeats streaming and no consumer wants it). One-line history, full
+plain-English record in `../STATUS.md`, evidence per step in
+`../docs/blas-ab-2026-07.md`, current numbers in `bench/README.md`:
 
-- **Level 1**: read-modify-write streams at 81–100% of the machine's
-  fastest same-run stream; dot AT the triad read ceiling, nrm2/asum at
-  73–97% of it (4-accumulator reductions). Reductions are
-  bit-identical native ↔ wasm BY CONSTRUCTION (`src/lanes.rs` emulates
-  the SIMD lane structure elementwise off-wasm).
-- **Level 2**: rank-1 updates 79–100% of ceiling; gemv 29–31 GB/s
-  (was ~17) via 4-column fan-in; gemv_t 22–29 GB/s untouched — it
-  inherited the 4-accumulator dot through composition; symv ~2× via
-  the fused 4-column pass; trmv/trsv ~1.3× via fan-in blocking.
-- **Level 3**: the family runs at 48–56% of the machine's arithmetic
-  peak (was 34–44%), gemm beats faer's blocked gemm at every measured
-  size (1.25–1.8×, size-dispatched tile/fan-out), and symm_left —
-  riding the fused symv — reaches **84–86% of peak**, the best
-  matrix–matrix row on the board.
-
-One candidate was raced and REFUTED (fused single-pass iamax — slower
-than the shipped two-pass shape on both draws; reverted, loss recorded
-in its module docs). The per-op fused-FMA variants are **deferred by
-the campaign close**: wasm relaxed-madd rounding is
-implementation-dependent, so shipping them trades away cross-target
-bit-identity — an architect decision, recorded in ROADMAP.
-
-**The f32 layer is built** (2026-07-19, Andy: "same treatment as
-f64") — the tuned f64 layer cloned one-for-one (the s-routines): same
-shapes, same testing contract, on four f32 lanes per
-register (`lanes::F32x4`, bit-identical native emulation). 23
-routines, 30 mirrored tests (60 crate-wide), 21 f32 determinism
-probes; reduction bounds check against an f64-accumulated reference.
-Deliberate differences, both measured: the gemm register tile covers
-8 rows × 4 columns (same register count, double lane width), and the
-tile/col4 dispatch threshold is 3 MB of A — the f32 crossover raced
-on both runner draws (tiled unanimous through n=512, col4 unanimous
-at 1024; the container said the opposite and was overruled).
-Consumer path: the s-prefixed routines in `faer_wasm_blas::L{1,2,3}`. Runner rooflines
-in `../docs/blas-ab-2026-07.md` step 10: f32 arithmetic peak ~1.8×
-f64's, the L3 family at the same fractions of it (48–58%, symm_left
-79–82%), reductions on the read path, 21 probes bit-identical on
-both draws.
-
-**The c64 layer is built** (2026-07-19) — the first NON-mechanical
-clone: 26 routines / 31 operations (counting note above) over a new
-`C64` scalar (`src/c64.rs`, layout-compatible with
-num_complex/C99/faer — consumers cast slices) with one complex per
-F64x2 register. The complex product is a two-multiply sign-folded
-lane form that is bit-exactly the canonical scalar order, so the
-whole real-layer testing contract carried over: 40 new tests (104
-crate-wide), every deterministic-order op bit-locked to a same-order
-replay, and 24 c64 determinism probes bit-identical native ↔ wasm on
-the container and both runner draws. Six L1 routines
-(zdscal/zcopy/zswap/zdrot/dznrm2/dzasum) are pure delegations to the
-tuned d-streams over the interleaved 2n-real view — speed and guards
-inherited, zswap/zdrot measure 97–100% of ceiling. Runner rooflines
-(2 draws, `bench/README.md`): the L3 family at **74–86% of the f64
-arithmetic peak** (complex does 4× the FLOPs per byte, so the
-fan-out shapes run compute-bound — zgemm 74–79% with NO register
-tile), with two honest weak rows tied to one recorded lever: zhemv
-ships the single-column fused pass (19–21%), and hemm_left rides it
-(39–41%) — the 4-column fused grouping that pushed dsymv to 2× is
-the obvious first c64 tuning candidate.
-
-**The c32 layer is built** (2026-07-19, Andy: "C32") — the c64 layer
-cloned into single precision with one real lane-geometry change: TWO
-complexes per F32x4 register, so the product form works pair-wise
-(`swap_pairs`/`dup_even`/`dup_odd`/`neg_even`/`neg_odd`) and odd
-lengths leave a one-complex scalar tail — bit-identical by the same
-sign-folding proof. 26 routines / 31 operations over `C32`
-(`src/c32.rs`); six delegations to the tuned s-streams; 40 new tests
-(144 crate-wide, all green); 24 determinism probes bit-identical
-native ↔ wasm on the container and both runner draws. Runner
-rooflines (2 draws): the L3 family at **75–87% of the f32 arithmetic
-peak** — cgemm's 85% of ~30.5 GFLOP/s (≈26 GFLOP/s) is the fastest
-absolute row on the whole board — with the same recorded lever
-(chemv's un-grouped fused pass at 12%, hemm_left riding it at
-55–56%) and icamax inheriting isamax's rescan weakness (13–16%).
+- **f64** (built 2026-07-18, tuned + campaign closed 2026-07-19,
+  docs steps 3–9): every verdict backed by two runner draws; gemm
+  beats faer at every measured size (1.25–1.8×, size-dispatched
+  tile/col4); dot AT the triad read ceiling; symm_left 84–86% of the
+  arithmetic peak via the fused symv. One candidate raced and
+  REFUTED (fused single-pass iamax — reverted, loss recorded in its
+  module docs). Fused-FMA variants DEFERRED at the close
+  (relaxed-madd rounding is implementation-dependent — trades away
+  cross-target bit-identity; architect decision, in ROADMAP).
+- **f32** (built 2026-07-19, docs step 10): the tuned layer cloned
+  one-for-one at double lane width; two measured deviations (8×4
+  gemm tile, 3 MB dispatch threshold — runner-raced, container
+  overruled); same ceiling fractions as f64.
+- **c64** (built 2026-07-19, docs step 11): the first
+  non-mechanical clone — own `C64` scalar, sign-folded lane product
+  bit-exact to the scalar order, six L1 delegations onto the tuned
+  d-streams; L3 at 74–86% of the f64 arithmetic peak (complex is
+  compute-bound at 4× FLOPs/byte).
+- **c32** (built 2026-07-19, docs step 12): c64 at two-complexes-
+  per-register lane geometry; L3 at 75–87% of the f32 peak — cgemm
+  ~26 GFLOP/s, the fastest absolute row in the library.
 
 Sequencing (Andy, 2026-07-18, revised same day; ROADMAP "BLAS
 campaign sequencing"): f64 tuned first — DONE; the tuned layer
@@ -124,44 +70,23 @@ intrinsics compile as out-of-line calls (measured 6.4× slowdown).
 ## Testing contract — two axes, both required to land
 
 **Correctness — `tests/` in this crate** (`cd blas && cargo test
---release`). Each function is tested to the strongest standard its
-math allows:
+--release`): every routine is tested to the strongest standard its
+math allows — bit-for-bit against a same-order scalar replay
+wherever the rounding order is deterministic, n-scaled error bounds
+against higher-precision references where lane parallelism
+legitimately reorders, exact-index/identity checks for iamax/rotg,
+residuals for the solves, and native ↔ wasm bit-identity throughout.
+The full rationale (what standard applies to which routine class and
+why) and the per-routine table live in `tests/README.md`.
 
-- *Elementwise streams* (copy, swap, scal, axpy, rot): **bit-for-bit**
-  against the scalar definition — SIMD lanes don't change the rounding
-  sequence of any individual element, so there is no excuse for any
-  difference. An FMA variant is checked bit-for-bit against the *fused*
-  scalar definition (one rounding instead of two — a different, equally
-  valid reference, documented per variant).
-- *Reduction streams* (dot, nrm2, asum): lane-parallel accumulation
-  legitimately reorders the additions, so bit-for-bit against
-  sequential reference BLAS is mathematically the wrong demand. The
-  standard is agreement with a higher-precision reference within
-  n-scaled floating-point error bounds. `iamax` is the exception that
-  IS exact: the returned index, including BLAS's first-occurrence
-  tie-breaking rule, must match precisely.
-- *Level 2/3*: **bit-for-bit against a same-order scalar replay**
-  wherever the operation's add order is deterministic (gemv, ger,
-  syr/syr2, trmv, trsv, and all of Level 3 except `symm_left`) — this
-  is also what lets tuned loop shapes ship invisibly: a blocked
-  variant must reproduce the replay's bits or document its reorder
-  and mirror it in the replay. Plus independent n-scaled error bounds
-  computed in a different accumulation order (and residual checks for
-  the solves).
-- *Everything*: **native ↔ wasm bit-identical for our own code** — the
-  project's standing determinism guarantee. Cross-target difference is
-  a bug, not noise.
-
-**Performance — `bench/` in this crate** (timing runs in the wasm
-runtime on the reference CI machines, so it lives in a harness, not
-in cargo tests; the harness is self-contained — no faer — and its
-README documents the method). The score is **distance from the
-machine's measured ceiling**: streaming ops against the bandwidth
-ceiling, multiply-class ops against the arithmetic peak — per the
-re-derived success metric, with same-machine interleaved A/B rows and
-the verdict-stability rule throughout. Current results:
-`bench/README.md` (the scoreboard). Market races against faer need
-faer and stay in `../bench/`.
+**Performance — `bench/` in this crate**: the score is **distance
+from the machine's measured ceiling** — streaming ops against the
+bandwidth ceiling, multiply-class ops against the arithmetic peak —
+per the re-derived success metric, with same-machine interleaved A/B
+rows and the verdict-stability rule (two runner draws per claim; the
+dev container is iteration only). The harness is self-contained (no
+faer); method and current scoreboard: `bench/README.md`. Market
+races against faer need faer and stay in `../bench/`.
 
 ## Implementation taxonomy
 
@@ -224,7 +149,7 @@ Evidence per row: `../docs/blas-ab-2026-07.md`.
 
 The type columns map to the routine-name prefixes (d/s/z/c — the
 full convention with the per-routine deviations from reference BLAS:
-`src/L1/README.md`); a row names the routine family, so the f64 cell
+`src/README.md`); a row names the routine family, so the f64 cell
 of `axpy` describes `daxpy`, the f32 cell `saxpy`. In the c64 column
 the symmetric rows describe the **Hermitian** z-routine (symv →
 `zhemv`, syr/syr2 → `zher`/`zher2`, symm → `zhemm`, syrk → `zherk`,

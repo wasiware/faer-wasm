@@ -1,5 +1,5 @@
 //! Level 3: matrix–matrix operations, one file per BLAS routine
-//! (netlib naming — src/L1/README.md), every one structurally a loop
+//! (netlib naming — src/README.md), every one structurally a loop
 //! of Level 1/2 calls over the right-hand matrix's columns. Since the
 //! 2026-07-19 tuning campaign every op runs its columns four at a
 //! time through the shared blocked kernels (`crate::kernels`) or a

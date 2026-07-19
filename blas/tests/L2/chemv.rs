@@ -41,6 +41,9 @@ fn chemv_bounded_both_triangles() {
 			let beta = C32::new(0.4, -0.1);
 			let mut y = y0.clone();
 			chemv(alpha, n, &a, cs, upper, &x, beta, &mut y);
+			// grouped candidate: same contract, same bounds
+			let mut yg = y0.clone();
+			chemv_grouped(alpha, n, &a, cs, upper, &x, beta, &mut yg);
 			for i in 0..n {
 				let want = c_up(alpha) * comp_sum_cc((0..n).map(|j| full[j * n + i] * x[j]))
 					+ c_up(beta * y0[i]);
@@ -51,6 +54,10 @@ fn chemv_bounded_both_triangles() {
 				assert!(
 					(y[i].re as f64 - want.re).abs() + (y[i].im as f64 - want.im).abs() <= tol,
 					"chemv upper={upper} n={n} i={i}"
+				);
+				assert!(
+					(yg[i].re as f64 - want.re).abs() + (yg[i].im as f64 - want.im).abs() <= tol,
+					"chemv_grouped upper={upper} n={n} i={i}"
 				);
 			}
 		}

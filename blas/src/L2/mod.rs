@@ -1,11 +1,12 @@
 //! Level 2: matrix–vector operations, one file per BLAS routine
-//! (netlib naming — src/L1/README.md), every one a composition of the
+//! (netlib naming — src/README.md), every one a composition of the
 //! Level 1 streams over column slices. Since the 2026-07-19 tuning
 //! campaign the multiply-vector family runs its columns four at a
 //! time through the shared blocked kernels (`crate::kernels`); tails
 //! and the rank-1/2 updates stay one Level 1 call per column. The
-//! SIMD hot loops live in l1/kernels under their `target_feature`
-//! annotations.
+//! SIMD hot loops live in L1/kernels under their `target_feature`
+//! annotations. All four number types follow the same structure
+//! (naming: src/README.md).
 //!
 //! Matrix convention (the whole crate): column-major slice with a
 //! column stride — column `j` of an `nrows × ncols` matrix `a` with
@@ -61,7 +62,7 @@ pub use strsv::strsv;
 pub use zgemv::{zgemv, zgemv_c, zgemv_t};
 pub use zgerc::zgerc;
 pub use zgeru::zgeru;
-pub use zhemv::zhemv;
+pub use zhemv::{zhemv, zhemv_grouped};
 pub use zher::zher;
 pub use zher2::zher2;
 pub use ztrmv::ztrmv;
@@ -69,7 +70,7 @@ pub use ztrsv::ztrsv;
 pub use cgemv::{cgemv, cgemv_c, cgemv_t};
 pub use cgerc::cgerc;
 pub use cgeru::cgeru;
-pub use chemv::chemv;
+pub use chemv::{chemv, chemv_grouped};
 pub use cher::cher;
 pub use cher2::cher2;
 pub use ctrmv::ctrmv;

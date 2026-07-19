@@ -1,10 +1,10 @@
 //! Level 1: vector operations, one file per BLAS routine (netlib
 //! naming — see README.md in this folder for the convention). The
-//! d-prefixed routines are f64, s-prefixed f32, z-prefixed c64;
-//! i-prefixed index routines carry the type second (idamax/izamax),
-//! and the complex routines returning reals carry both letters
-//! (dznrm2/dzasum). `drotg`/`srotg`/`zrotg` also export their Givens
-//! result structs via their module paths.
+//! d-prefixed routines are f64, s-prefixed f32, z-prefixed c64,
+//! c-prefixed c32; i-prefixed index routines carry the type second
+//! (idamax/icamax), and the complex routines returning reals carry
+//! both letters (dznrm2/scasum). `drotg`/`srotg`/`zrotg`/`crotg`
+//! also export their Givens result structs via their module paths.
 
 pub mod dasum;
 pub mod daxpy;
