@@ -110,38 +110,49 @@ A/B rows, verdict-stability rule throughout.
 ## Implementation taxonomy
 
 The whole layer reduces to **four SIMD streaming-loop shapes plus one
-scalar function**:
+scalar function** — the bold codes are the shorthand the tables below
+use:
 
-- **elementwise stream** — one pass over the vector(s); lanes are
-  transformed and written back (includes the fused y ← αx + y form).
-- **reduction stream** — one pass; parallel accumulator lanes, folded
-  to a single number at the end.
-- **column-axpy** — the matrix operation runs as one elementwise/axpy
-  stream per column.
-- **divide-then-column-axpy** — triangular solves: divide by the
-  diagonal entry, then stream the elimination update through the
+- **ES** — *elementwise stream*: one pass over the vector(s); lanes
+  are transformed and written back (includes the fused y ← αx + y
+  form).
+- **RS** — *reduction stream*: one pass; parallel accumulator lanes,
+  folded to a single number at the end.
+- **CA** — *column-axpy*: the matrix operation runs as one
+  elementwise/axpy stream per column.
+- **DCA** — *divide-then-column-axpy*: triangular solves — divide by
+  the diagonal entry, then stream the elimination update through the
   remaining columns.
 
-`rotg` is the sole exception: no arrays = no SIMD. Guarded scalar
-arithmetic, inlined branch-free into the sweep loops that call it
-(LAPACK's overflow guards kept — proven numerics).
+**G** (`rotg`) is the sole exception: no arrays = no SIMD. Guarded
+scalar arithmetic, inlined branch-free into the sweep loops that call
+it (LAPACK's overflow guards kept — proven numerics).
 
 The tuning campaign (2026-07-18/19) blocks the column shapes four
 columns at a time without changing any of them — the shared kernels in
-`src/kernels.rs` do the work: **fan-out** (`axpy4`: one source column
-streamed once into four destination columns — source traffic 4× down),
-**fan-in** (`axpy4in`: four source columns accumulated in one pass
-over the destination — destination read-modify-write traffic 4× down),
-and the **fused symv pass** (`axpy_dot`/`axpy_dot4`: one column load
-serves both triangles of the symmetric update); gemm additionally
-carries a register tile for small matrices (4×4 in f64, 8×4 in f32 —
-same register count at each lane width). The fan-out/fan-in
+`src/kernels.rs` do the work — the remaining table codes:
+
+- **+FO** — *4-column fan-out* (`axpy4`): one source column streamed
+  once into four destination columns — source traffic 4× down.
+- **+FI** — *4-column fan-in* (`axpy4in`): four source columns
+  accumulated in one pass over the destination — destination
+  read-modify-write traffic 4× down.
+- **FS** — *fused symv pass* (`axpy_dot`/`axpy_dot4`): one column
+  load serves both triangles of the symmetric update, four columns
+  grouped per pass over x and y.
+- **RT** — *register tile*: gemm's small-matrix micro-kernel (4×4 in
+  f64, 8×4 in f32 — same register count at each lane width);
+  `CA+RT/FO` means size-dispatched between the tile and fan-out at
+  the measured crossover.
+- **—** — not built for that type (c64 is the next campaign; c32
+  undecided — nothing has ever shipped c32). The fan-out/fan-in
 kernels preserve the per-element rounding sequence, so tuned ops stay
 bit-for-bit against their plain column-axpy replays (the two
 triangular right-side cases whose elimination order forbids that
 document their reorder and the tests mirror it; symv's fused pass
-legitimately re-folds its reduction and is bounds-tested). The table
-rows note which blocked shape each op ships with.
+legitimately re-folds its reduction and is bounds-tested). The tables
+give each op's shorthand per number type — matching f64/f32 cells are
+the clone doing its job.
 
 The step-1 three-way race measured fused-FMA better for
 `trmm`/`trsm`/`gemv` and harmful for `syrk` — those variants are
@@ -149,38 +160,40 @@ deferred at the campaign close (determinism trade-off; see status
 above). Banded/packed forms are not planned — no consumer demand.
 Evidence per row: `../docs/blas-ab-2026-07.md`.
 
-## Level 1 — `src/level1/`
+## Level 1 — `src/level1/`, `src/f32/level1/`
 
-| BLAS | mathematical name | implementation |
-|---|---|---|
-| `axpy` | scaled vector addition (y ← αx + y) | elementwise stream |
-| `scal` | scalar × vector | elementwise stream |
-| `copy` | vector copy | elementwise stream |
-| `swap` | exchange two vectors | elementwise stream |
-| `rot` | apply a plane rotation | elementwise stream |
-| `dot` | dot product | reduction stream |
-| `nrm2` | Euclidean length (ℓ² norm) | reduction stream |
-| `asum` | sum of absolute values (ℓ¹ norm) | reduction stream |
-| `iamax` | index of the largest element | reduction stream |
-| `rotg` | generate a plane rotation | no arrays = no SIMD |
+| BLAS | mathematical name | f64 | f32 | c64 | c32 |
+|---|---|---|---|---|---|
+| `axpy` | scaled vector addition (y ← αx + y) | ES | ES | — | — |
+| `scal` | scalar × vector | ES | ES | — | — |
+| `copy` | vector copy | ES | ES | — | — |
+| `swap` | exchange two vectors | ES | ES | — | — |
+| `rot` | apply a plane rotation | ES | ES | — | — |
+| `dot` | dot product | RS | RS | — | — |
+| `nrm2` | Euclidean length (ℓ² norm) | RS | RS | — | — |
+| `asum` | sum of absolute values (ℓ¹ norm) | RS | RS | — | — |
+| `iamax` | index of the largest element | RS | RS | — | — |
+| `rotg` | generate a plane rotation | G | G | — | — |
 
-## Level 2 — `src/level2/`
+## Level 2 — `src/level2/`, `src/f32/level2/`
 
-| BLAS | mathematical name | implementation |
-|---|---|---|
-| `gemv` | matrix × vector | column-axpy, 4-column fan-in |
-| `ger` | outer-product update (rank-1) | column-axpy |
-| `symv` | symmetric matrix × vector | fused stream, 4-column grouped |
-| `trmv` | triangular matrix × vector | column-axpy, 4-column fan-in |
-| `syr` / `syr2` | symmetric rank-1/2 updates | column-axpy |
-| `trsv` | triangular solve, one vector | divide-then-column-axpy, 4-column fan-in |
+| BLAS | mathematical name | f64 | f32 | c64 | c32 |
+|---|---|---|---|---|---|
+| `gemv` | matrix × vector | CA+FI | CA+FI | — | — |
+| `ger` | outer-product update (rank-1) | CA | CA | — | — |
+| `symv` | symmetric matrix × vector | FS | FS | — | — |
+| `trmv` | triangular matrix × vector | CA+FI | CA+FI | — | — |
+| `syr` / `syr2` | symmetric rank-1/2 updates | CA | CA | — | — |
+| `trsv` | triangular solve, one vector | DCA+FI | DCA+FI | — | — |
 
-## Level 3 — `src/level3/`
+## Level 3 — `src/level3/`, `src/f32/level3/`
 
-| BLAS | mathematical name | implementation |
-|---|---|---|
-| `gemm` | matrix multiplication | column-axpy, size-dispatched 4×4 tile / 4-column fan-out |
-| `syrk` | Gram-matrix update (αAAᵀ + βC) | column-axpy, 4-column fan-out |
-| `trmm` | triangular matrix multiplication | column-axpy, 4-column fan-out |
-| `symm` / `syr2k` | symmetric multiply / rank-2k update | column-axpy, 4-column fan-out (left symm: symv per column) |
-| `trsm` | triangular solve, many right-hand sides | divide-then-column-axpy, 4-column fan-out |
+| BLAS | mathematical name | f64 | f32 | c64 | c32 |
+|---|---|---|---|---|---|
+| `gemm` | matrix multiplication | CA+RT/FO | CA+RT/FO | — | — |
+| `syrk` | Gram-matrix update (αAAᵀ + βC) | CA+FO | CA+FO | — | — |
+| `trmm` | triangular matrix multiplication | CA+FO | CA+FO | — | — |
+| `symm` / `syr2k` | symmetric multiply / rank-2k update | CA+FO ¹ | CA+FO ¹ | — | — |
+| `trsm` | triangular solve, many right-hand sides | DCA+FO | DCA+FO | — | — |
+
+¹ left-side symm is FS per column of B.
