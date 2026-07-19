@@ -4,7 +4,7 @@ The wasm-native BLAS layer, built as its own finished product per the
 2026-07-18 direction reset: the LAPACK-layer kernels re-route their
 bulk work onto this crate as it fills in. One file per BLAS routine
 per number type in netlib naming (`daxpy.rs`, `saxpy.rs`, … —
-convention: `src/l1/README.md`), one folder per level; this README is
+convention: `src/L1/README.md`), one folder per level; this README is
 the plan of record for the layer. Companion maps: `src/README.md`
 (who calls whom), `tests/README.md` (the measured scoreboard).
 
@@ -49,7 +49,7 @@ Deliberate differences, both measured: the gemm register tile covers
 tile/col4 dispatch threshold is 3 MB of A — the f32 crossover raced
 on both runner draws (tiled unanimous through n=512, col4 unanimous
 at 1024; the container said the opposite and was overruled).
-Consumer path: the s-prefixed routines in `faer_wasm_blas::l{1,2,3}`. Runner rooflines
+Consumer path: the s-prefixed routines in `faer_wasm_blas::L{1,2,3}`. Runner rooflines
 in `../docs/blas-ab-2026-07.md` step 10: f32 arithmetic peak ~1.8×
 f64's, the L3 family at the same fractions of it (48–58%, symm_left
 79–82%), reductions on the read path, 21 probes bit-identical on
@@ -102,13 +102,16 @@ math allows:
   project's standing determinism guarantee. Cross-target difference is
   a bug, not noise.
 
-**Performance — `../bench/`** (timing runs in the wasm runtime on the
-reference CI machines, so it lives in the bench harness, not in cargo
-tests). The score is **distance from the machine's measured ceiling**:
-streaming ops against the bandwidth ceiling, multiply-class ops against
-the arithmetic peak — per the re-derived success metric. Method: the
-ceiling probes (`bench/ceilings.mjs`) plus same-machine interleaved
-A/B rows, verdict-stability rule throughout.
+**Performance — `bench/` in this crate** (timing runs in the wasm
+runtime on the reference CI machines, so it lives in a harness, not
+in cargo tests; the harness is self-contained — no faer — and its
+README documents the method). The score is **distance from the
+machine's measured ceiling**: streaming ops against the bandwidth
+ceiling, multiply-class ops against the arithmetic peak — per the
+re-derived success metric, with same-machine interleaved A/B rows and
+the verdict-stability rule throughout. Current results:
+`tests/README.md` (the scoreboard). Market races against faer need
+faer and stay in `../bench/`.
 
 ## Implementation taxonomy
 
@@ -165,10 +168,10 @@ Evidence per row: `../docs/blas-ab-2026-07.md`.
 
 The type columns map to the routine-name prefixes (d/s/z/c — the
 full convention with the per-routine deviations from reference BLAS:
-`src/l1/README.md`); a row names the routine family, so the f64 cell
+`src/L1/README.md`); a row names the routine family, so the f64 cell
 of `axpy` describes `daxpy`, the f32 cell `saxpy`.
 
-## Level 1 — `src/l1/`
+## Level 1 — `src/L1/`
 
 | BLAS | mathematical name | f64 | f32 | c64 | c32 |
 |---|---|---|---|---|---|
@@ -183,7 +186,7 @@ of `axpy` describes `daxpy`, the f32 cell `saxpy`.
 | `iamax` | index of the largest element | RS | RS | — | — |
 | `rotg` | generate a plane rotation | G | G | — | — |
 
-## Level 2 — `src/l2/`
+## Level 2 — `src/L2/`
 
 | BLAS | mathematical name | f64 | f32 | c64 | c32 |
 |---|---|---|---|---|---|
@@ -194,7 +197,7 @@ of `axpy` describes `daxpy`, the f32 cell `saxpy`.
 | `syr` / `syr2` | symmetric rank-1/2 updates | CA | CA | — | — |
 | `trsv` | triangular solve, one vector | DCA+FI | DCA+FI | — | — |
 
-## Level 3 — `src/l3/`
+## Level 3 — `src/L3/`
 
 | BLAS | mathematical name | f64 | f32 | c64 | c32 |
 |---|---|---|---|---|---|

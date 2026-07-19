@@ -1,7 +1,7 @@
 # tests/ — correctness suites and the measured scoreboard
 
 One test file per BLAS routine, mirroring `../src/` (naming:
-`../src/l1/README.md`); `main.rs` per level folder is the Cargo test
+`../src/L1/README.md`); `main.rs` per level folder is the Cargo test
 target, `common.rs` holds the shared generator and the
 higher-precision reference summers. Run with
 `cd blas && cargo test --release` (64 tests). What each routine is
@@ -77,10 +77,11 @@ at every measured size, 1.25–1.8×, two draws (docs step 6).
 
 ## Regenerating
 
-The rows come from `../../bench/l{1,2,3}-roofline.mjs` (add `--f32`
-for the s-routines), which also verify the 42 cross-target
-determinism probes against `cargo run --release --bin native
-l{1,2,3}-bits[-f32]`. Reference-machine draws use the temp-routing
-procedure in `../../docs/engineer-handoff-2026-07.md`; per the
-verdict rules, container numbers are iteration-only — update this
-scoreboard only from runner draws, two per claim.
+The rows come from `../bench/l{1,2,3}-roofline.mjs` (add `--f32` for
+the s-routines) over the self-contained `blas-bench` wasm — build and
+run instructions in `../bench/README.md`. Each run also verifies the
+42 cross-target determinism probes against the native bits.
+Reference-machine draws use the temp-routing procedure in
+`../../docs/engineer-handoff-2026-07.md`; per the verdict rules,
+container numbers are iteration-only — update this scoreboard only
+from runner draws, two per claim.

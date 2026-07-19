@@ -18,11 +18,15 @@ evidence log: docs/blas-ab-2026-07.md steps 1–6. Scoreboard: STATUS §3.
 
 ## Runner measurement procedure (used for every verdict)
 1. Insert a TEMPORARY routing block in `bench/pyodide-vs-faer.mjs`
-   just before the `const SIZES = [64, 128, 256, 512];` anchor:
-   execSync the target script (e.g. `node l3-roofline.mjs ${wasmPath}
-   /tmp/native-l3-bits.txt` after `cargo run --release --bin native
-   l3-bits > /tmp/...`), then `process.exit(0)`. Commit as
-   "TEMPORARY: ... (revert after draws)".
+   just before the `const SIZES = [64, 128, 256, 512];` anchor.
+   Since the 2026-07-19 restructure the blas rooflines live in
+   blas/bench (own wasm, builds in seconds): execSync
+   `cd ../blas/bench && cargo build --release --target
+   wasm32-unknown-unknown --lib`, then per level `cargo run --release
+   --bin native lN-bits[-f32] > /tmp/bits` and `node lN-roofline.mjs
+   target/.../blas_bench.wasm /tmp/bits [--f32]` (cwd blas/bench),
+   then `process.exit(0)`. Commit as "TEMPORARY: ... (revert after
+   draws)".
 2. Dispatch 2× `actions_run_trigger` on `pyodide-bench.yml`, ref the
    branch. `git revert --no-edit <routing-sha>` immediately (queued
    runs keep their head SHA).
@@ -50,12 +54,12 @@ evidence log: docs/blas-ab-2026-07.md steps 1–6. Scoreboard: STATUS §3.
 - Levels 2/3 are literal loops of Level 1/2 calls on column slices —
   one stream implementation per op (map: blas/src/README.md). Layout
   since the 2026-07-19 restructure: netlib naming, one file per
-  routine per type (daxpy.rs/saxpy.rs...) under src/l{1,2,3}; tuned
+  routine per type (daxpy.rs/saxpy.rs...) under src/L{1,2,3}; tuned
   kernels (d/saxpy4, d/saxpy4in, d/saxpy_dot(4)) in src/kernels.rs;
-  tests mirror it under tests/l{1,2,3}/ with main.rs+common.rs per
+  tests mirror it under tests/L{1,2,3}/ with main.rs+common.rs per
   level; the live scoreboard is blas/tests/README.md.
 
-## bench harness map
+## bench harness map (bench/ = faer side; blas/bench = blas side)
 - State: a, b (inputs), sym (SACRIFICIAL — triad destination and L2/L3
   mutation target), tri (a with diag = 2n+1, keeps solves bounded),
   rhs (n×1 scratch for L2 y / trmv/trsv x).
@@ -64,10 +68,13 @@ evidence log: docs/blas-ab-2026-07.md steps 1–6. Scoreboard: STATUS §3.
   run_l3_layer(0..7: gemm,symm_l,syrk,syr2k,trmm_l,trsm_l,trmm_r,
   trsm_r), run_l3_tuned_gemm (tiled), run_l3_col4_gemm, probes as
   above, run_ceiling_bw (pure triad v2), run_ceiling_flops(iters).
-- Scripts: l1/l2-roofline.mjs (GB/s vs fastest same-run stream,
-  n=2048), l3-roofline.mjs (GFLOP/s vs arithmetic peak, n=512),
-  gemm-tune-ab.mjs (4-way race). Old race harnesses (run_blas_ab,
-  run_l1_ab) still exported — run_blas_ab(4,0) = faer gemm reference.
+- Scripts: blas/bench/l{1,2,3}-roofline.mjs (L1/L2 GB/s vs fastest
+  same-run stream at n=2048; L3 GFLOP/s vs arithmetic peak at n=512;
+  --f32 switches type) over the blas-bench wasm. bench/gemm-tune-ab.mjs
+  (4-way faer race) takes TWO wasm paths since the restructure. Old
+  race harnesses (run_blas_ab, run_l1_ab) still exported from
+  bench-harness — run_blas_ab(4,0) = faer gemm reference. The layer
+  rows/probes/ceilings themselves live in blas/bench/src/lib.rs.
 
 ## Tuning campaign state (task #22 — CLOSED 2026-07-19)
 Six levers shipped, every verdict two runner draws (docs steps 6–9):
