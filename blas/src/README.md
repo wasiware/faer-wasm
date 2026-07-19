@@ -1,100 +1,131 @@
-# src/ — the dependency map
+# src/ — the call graph
 
-One file per BLAS routine per type, netlib naming (convention:
-`L1/README.md`). The layer is a strict one-way composition — every
-edge points from caller to callee; no cycles, no sideways calls
-within a level.
-
-**One node = one routine family, both types.** The f64 (d-) and f32
-(s-) routines have identical edge sets by construction — same files,
-same calls, with the s-side running on the s-kernels and `F32x4` —
-so the map treats them as one. (If a future type ever deviates
-structurally, it gets its own edges here.)
+Which functions call which functions. One node per routine, covering
+both types: the f64 and f32 layers have identical call structure by
+construction, so `gemv → axpy` means both `dgemv → daxpy` and
+`sgemv → saxpy`.
 
 ```mermaid
 graph TD
   subgraph L3
-    gemm["gemm (size dispatch: tile / col4;\nplain colaxpy kept as bit reference)"]
+    gemm
+    gemm_tiled
+    gemm_col4
+    gemm_colaxpy
     symm_left
     symm_right
-    syrk["syrk / syr2k"]
-    trmm_left["trmm_left / trsm_left"]
-    trmm_right["trmm_right / trsm_right"]
+    syrk
+    syr2k
+    trmm_left
+    trmm_right
+    trsm_left
+    trsm_right
   end
 
   subgraph L2
     gemv
     gemv_t
-    ger["ger · syr · syr2"]
+    ger
     symv
-    trmv["trmv / trsv"]
+    trmv
+    trsv
+    syr
+    syr2
   end
 
   subgraph L1
     axpy
     dot
     scal
-    l1rest["copy · swap · rot · nrm2 · asum · iamax\n(each self-contained)  ·  rotg (scalar)"]
+    copy
+    swap
+    rot
+    nrm2
+    asum
+    iamax
+    rotg
   end
 
   subgraph kernels
-    axpy4["axpy4 (+FO)"]
-    axpy4in["axpy4in (+FI)"]
-    axpy_dot["axpy_dot(4) (FS)"]
-    tile["register tile (RT, private to gemm)"]
+    axpy4
+    axpy4in
+    axpy_dot
+    tile
   end
 
-  lanes["lanes: F64x2 / F32x4"]
+  lanes
 
-  gemm --> tile
-  gemm --> axpy4
-  gemm -->|tails| gemv
-  symm_left -->|per column of B| symv
+  gemm --> gemm_tiled
+  gemm --> gemm_col4
+  gemm_tiled --> tile
+  gemm_tiled --> gemv
+  gemm_tiled --> axpy
+  gemm_col4 --> axpy4
+  gemm_col4 --> gemv
+  gemm_colaxpy --> gemv
+  symm_left --> symv
   symm_right --> axpy4
+  symm_right --> axpy
   syrk --> axpy4
-  syrk -->|ragged edge + tails| axpy
-  trmm_left -->|lockstep walk| axpy4
-  trmm_left -->|tail columns| trmv
-  trmm_right -->|out-of-group| axpy4
-  trmm_right -->|in-group| axpy
+  syrk --> axpy
+  syr2k --> axpy4
+  syr2k --> axpy
+  trmm_left --> axpy4
+  trmm_left --> trmv
+  trmm_left --> scal
+  trsm_left --> axpy4
+  trsm_left --> trsv
+  trsm_left --> scal
+  trmm_right --> axpy4
+  trmm_right --> axpy
   trmm_right --> scal
+  trsm_right --> axpy4
+  trsm_right --> axpy
+  trsm_right --> scal
 
-  gemv -->|4-col groups| axpy4in
-  gemv -->|tails| axpy
-  gemv_t -->|per column| dot
-  ger -->|per column| axpy
+  gemv --> axpy4in
+  gemv --> axpy
+  gemv_t --> dot
+  ger --> axpy
   symv --> axpy_dot
-  trmv -->|common segment| axpy4in
-  trmv -->|tails| axpy
+  trmv --> axpy4in
+  trmv --> axpy
+  trsv --> axpy4in
+  trsv --> axpy
+  syr --> axpy
+  syr2 --> axpy
 
   axpy --> lanes
   dot --> lanes
   scal --> lanes
-  l1rest --> lanes
+  copy --> lanes
+  swap --> lanes
+  rot --> lanes
+  nrm2 --> lanes
+  asum --> lanes
+  iamax --> lanes
   axpy4 --> lanes
   axpy4in --> lanes
   axpy_dot --> lanes
   tile --> lanes
 ```
 
-Edge labels are the crate README's shorthand (+FO fan-out, +FI
-fan-in, FS fused symv pass, RT register tile). Grouped nodes share
-their edges: `syrk / syr2k` both stream via axpy4 with ragged edges
-on axpy; `trmm_left / trsm_left` both do the lockstep walk (trsm's
-tails go to trsv); `trmm_right / trsm_right` differ only in trsm's
-reciprocal scal; `ger · syr · syr2` are all plain axpy-per-column;
-symm_right's tail columns use axpy.
+Reading notes, kept out of the graph:
 
-Not drawn: the shared helpers — `L2::check_mat` (storage validation,
-type-free), `L2::{d,s}scale_y` (BLAS β=0 = hard zero-fill),
-`L3::{d,s}sym_at` (stored-triangle lookup) — are leaf utilities used
-across their levels.
+- `gemm` is a size dispatcher over `gemm_tiled` and `gemm_col4`;
+  `gemm_colaxpy` is the plain reference shape, kept for bit checks.
+  `tile` is gemm's private register-tile micro-kernel (it lives in
+  the gemm files, not `kernels.rs`); `axpy_dot` stands for both the
+  1- and 4-column fused symv kernels.
+- `rotg` calls nothing (guarded scalar, no arrays); copy/swap/rot/
+  nrm2/asum/iamax have no in-crate callers — consumers call them
+  directly.
+- Not drawn: the small type-free helpers `check_mat`,
+  `{d,s}scale_y`, `{d,s}sym_at`, used across their levels.
+- WHY each edge has the shape it has (fan-out/fan-in/fused/tile) is
+  the crate README's taxonomy and tables; the measured consequences
+  are `../bench/README.md`.
 
-Why composition is load-bearing and not just tidy: when the tuning
-campaign gave `dot` four accumulators, `gemv_t` — a loop of dot calls
-— got 1.3–1.7× faster without being touched (two-draw runner verdict,
-docs step 7). Improvements flow up the arrows, in both types at once.
-
-The composition is structural, not sacred: any edge may be replaced
-by a tuned kernel when a race on the reference machines says so (the
-record of every such decision: `../../docs/blas-ab-2026-07.md`).
+One property worth knowing: improvements flow up the arrows — when
+the tuning campaign gave `dot` four accumulators, `gemv_t` got
+1.3–1.7× faster untouched (two-draw runner verdict, docs step 7).
