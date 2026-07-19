@@ -5,6 +5,7 @@
 //! scaffold.
 #![no_std]
 
+mod kernels;
 mod lanes;
 
 pub mod level1;

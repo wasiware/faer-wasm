@@ -155,6 +155,30 @@ fn symm_both_sides_bounded() {
 					assert!((c[j * ccs + i] - want).abs() <= tol, "symm_right ({i},{j})");
 				}
 			}
+			// same-order scalar replay (β scale, then k ascending: one
+			// α·a rounding + one mul-add per element — the fan-out
+			// grouping does not change any element's sequence)
+			let mut cr = c0.clone();
+			for j in 0..n {
+				for i in 0..m {
+					cr[j * ccs + i] *= 0.3;
+				}
+				for k in 0..n {
+					let t = 0.8 * full[j * n + k];
+					for i in 0..m {
+						cr[j * ccs + i] += b[k * bcs + i] * t;
+					}
+				}
+			}
+			for j in 0..n {
+				for i in 0..m {
+					assert_eq!(
+						c[j * ccs + i].to_bits(),
+						cr[j * ccs + i].to_bits(),
+						"symm_right bits n={n} ({i},{j})"
+					);
+				}
+			}
 		}
 	}
 }
@@ -371,6 +395,252 @@ fn gemm_tiled_bit_identical_to_gemm() {
 						c3[j * ccs + i].to_bits(),
 						"col4 vs column-axpy {m}x{k}x{n} ({i},{j})"
 					);
+				}
+			}
+		}
+	}
+}
+
+// Same-order scalar replays for the triangular in-place ops. For
+// trmm_left / trsm_left / trmm_right-lower / trsm_right-upper the
+// replay is the PLAIN pre-tuning order — asserting the shipped
+// lockstep/fan-out grouping is bit-identical to it. For
+// trmm_right-upper / trsm_right-lower the grouping reorders the adds
+// (documented in the op files); the replay mirrors the shipped group
+// structure exactly.
+const TRI_DIMS: &[(usize, usize)] =
+	&[(0, 0), (1, 1), (3, 5), (5, 3), (4, 4), (8, 8), (9, 13), (16, 7), (20, 33), (33, 20)];
+
+#[test]
+fn trmm_bit_replay_both_sides() {
+	let mut rng = Lcg(37);
+	for &(m, n) in TRI_DIMS {
+		for upper in [true, false] {
+			for unit in [true, false] {
+				let bcs = m + 2;
+
+				// left: B <- alpha * A * B, plain trmv-per-column replay
+				let acs = m + 1;
+				let a = rng.mat(m, m, acs);
+				let b0 = rng.mat(m, n, bcs);
+				let mut bt = b0.clone();
+				trmm_left(0.9, m, n, &a, acs, upper, unit, &mut bt, bcs);
+				let mut br = b0.clone();
+				for j in 0..n {
+					if upper {
+						for l in 0..m {
+							let t = br[j * bcs + l];
+							for i in 0..l {
+								br[j * bcs + i] += a[l * acs + i] * t;
+							}
+							if !unit {
+								br[j * bcs + l] = t * a[l * acs + l];
+							}
+						}
+					} else {
+						for l in (0..m).rev() {
+							let t = br[j * bcs + l];
+							for i in l + 1..m {
+								br[j * bcs + i] += a[l * acs + i] * t;
+							}
+							if !unit {
+								br[j * bcs + l] = t * a[l * acs + l];
+							}
+						}
+					}
+					for i in 0..m {
+						br[j * bcs + i] *= 0.9;
+					}
+				}
+				for (x, y) in bt.iter().zip(&br) {
+					if !x.is_nan() {
+						assert_eq!(x.to_bits(), y.to_bits(), "trmm_left {m}x{n} u={upper}");
+					}
+				}
+
+				// right: B <- alpha * B * A
+				let acs = n + 1;
+				let a = rng.mat(n, n, acs);
+				let b0 = rng.mat(m, n, bcs);
+				let mut bt = b0.clone();
+				trmm_right(0.9, m, n, &a, acs, upper, unit, &mut bt, bcs);
+				let mut br = b0.clone();
+				let dcol = |br: &mut Vec<f64>, j: usize, lo: usize, hi: usize| {
+					let d = if unit { 1.0 } else { a[j * acs + j] };
+					let s = 0.9 * d;
+					for i in 0..m {
+						br[j * bcs + i] *= s;
+					}
+					for k in lo..hi {
+						let t = 0.9 * a[j * acs + k];
+						for i in 0..m {
+							br[j * bcs + i] += br[k * bcs + i] * t;
+						}
+					}
+				};
+				if upper {
+					// grouped replay: in-group (descending targets, ascending
+					// k) first, then out-of-group sources ascending
+					let r = n % 4;
+					let mut gs = n;
+					while gs >= r + 4 {
+						gs -= 4;
+						for tc in (gs..gs + 4).rev() {
+							dcol(&mut br, tc, gs, tc);
+						}
+						for k in 0..gs {
+							for u in 0..4 {
+								let t = 0.9 * a[(gs + u) * acs + k];
+								for i in 0..m {
+									br[(gs + u) * bcs + i] += br[k * bcs + i] * t;
+								}
+							}
+						}
+					}
+					for j in (0..r).rev() {
+						dcol(&mut br, j, 0, j);
+					}
+				} else {
+					// plain ascending replay — the grouping keeps lower
+					// fully ascending, so this asserts bit-identity to it
+					for j in 0..n {
+						dcol(&mut br, j, j + 1, n);
+					}
+				}
+				for (x, y) in bt.iter().zip(&br) {
+					if !x.is_nan() {
+						assert_eq!(x.to_bits(), y.to_bits(), "trmm_right {m}x{n} u={upper}");
+					}
+				}
+			}
+		}
+	}
+}
+
+#[test]
+fn trsm_bit_replay_both_sides() {
+	let mut rng = Lcg(38);
+	for &(m, n) in TRI_DIMS {
+		for upper in [true, false] {
+			for unit in [true, false] {
+				let bcs = m + 2;
+
+				// left: B <- alpha * inv(A) * B, plain scal-then-trsv replay
+				let acs = m + 1;
+				let mut a = rng.mat(m, m, acs);
+				for j in 0..m {
+					a[j * acs + j] = 2.0 * (m as f64) + 1.0 + j as f64;
+				}
+				let b0 = rng.mat(m, n, bcs);
+				let mut bt = b0.clone();
+				trsm_left(0.9, m, n, &a, acs, upper, unit, &mut bt, bcs);
+				let mut br = b0.clone();
+				for j in 0..n {
+					for i in 0..m {
+						br[j * bcs + i] *= 0.9;
+					}
+					if upper {
+						for l in (0..m).rev() {
+							if !unit {
+								br[j * bcs + l] /= a[l * acs + l];
+							}
+							let t = -br[j * bcs + l];
+							for i in 0..l {
+								br[j * bcs + i] += a[l * acs + i] * t;
+							}
+						}
+					} else {
+						for l in 0..m {
+							if !unit {
+								br[j * bcs + l] /= a[l * acs + l];
+							}
+							let t = -br[j * bcs + l];
+							for i in l + 1..m {
+								br[j * bcs + i] += a[l * acs + i] * t;
+							}
+						}
+					}
+				}
+				for (x, y) in bt.iter().zip(&br) {
+					if !x.is_nan() {
+						assert_eq!(x.to_bits(), y.to_bits(), "trsm_left {m}x{n} u={upper}");
+					}
+				}
+
+				// right: B <- alpha * B * inv(A)
+				let acs = n + 1;
+				let mut a = rng.mat(n, n, acs);
+				for j in 0..n {
+					a[j * acs + j] = 2.0 * (n as f64) + 1.0 + j as f64;
+				}
+				let b0 = rng.mat(m, n, bcs);
+				let mut bt = b0.clone();
+				trsm_right(0.9, m, n, &a, acs, upper, unit, &mut bt, bcs);
+				let mut br = b0.clone();
+				let elim = |br: &mut Vec<f64>, j: usize, k: usize| {
+					let t = -a[j * acs + k];
+					for i in 0..m {
+						br[j * bcs + i] += br[k * bcs + i] * t;
+					}
+				};
+				let finish = |br: &mut Vec<f64>, j: usize| {
+					if !unit {
+						let s = 1.0 / a[j * acs + j];
+						for i in 0..m {
+							br[j * bcs + i] *= s;
+						}
+					}
+				};
+				if upper {
+					// plain ascending replay — the grouping keeps upper
+					// fully ascending, so this asserts bit-identity to it
+					for j in 0..n {
+						for i in 0..m {
+							br[j * bcs + i] *= 0.9;
+						}
+						for k in 0..j {
+							elim(&mut br, j, k);
+						}
+						finish(&mut br, j);
+					}
+				} else {
+					// grouped replay: out-of-group solved columns first,
+					// then in-group elimination descending
+					let r = n % 4;
+					let mut gs = n;
+					while gs >= r + 4 {
+						gs -= 4;
+						for u in 0..4 {
+							for i in 0..m {
+								br[(gs + u) * bcs + i] *= 0.9;
+							}
+						}
+						for k in gs + 4..n {
+							for u in 0..4 {
+								elim(&mut br, gs + u, k);
+							}
+						}
+						for tc in (gs..gs + 4).rev() {
+							for k in tc + 1..gs + 4 {
+								elim(&mut br, tc, k);
+							}
+							finish(&mut br, tc);
+						}
+					}
+					for j in (0..r).rev() {
+						for i in 0..m {
+							br[j * bcs + i] *= 0.9;
+						}
+						for k in j + 1..n {
+							elim(&mut br, j, k);
+						}
+						finish(&mut br, j);
+					}
+				}
+				for (x, y) in bt.iter().zip(&br) {
+					if !x.is_nan() {
+						assert_eq!(x.to_bits(), y.to_bits(), "trsm_right {m}x{n} u={upper}");
+					}
 				}
 			}
 		}

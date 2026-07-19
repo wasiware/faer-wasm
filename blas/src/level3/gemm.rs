@@ -9,6 +9,7 @@
 //! — no consumer yet (syrk covers A·Aᵀ).
 
 use super::check_mat;
+use crate::kernels::axpy4;
 use crate::level2::gemv;
 
 /// C ← αAB + βC. A is m×k, B is k×n, C is m×n; each matrix has its own
@@ -196,48 +197,6 @@ pub fn gemm_col4(
 	while j < n {
 		gemv(alpha, m, k, a, acs, &b[j * bcs..j * bcs + k], beta, &mut c[j * ccs..j * ccs + m]);
 		j += 1;
-	}
-}
-
-/// One sequential pass over an A column updating four C columns:
-/// cᵤ[i] += a[i]·tᵤ.
-/// # Safety
-/// All five column pointers must be valid for `len` f64s; the C
-/// columns must not alias each other or `a`.
-#[cfg_attr(target_arch = "wasm32", target_feature(enable = "simd128"))]
-#[allow(clippy::too_many_arguments)]
-unsafe fn axpy4(
-	a: *const f64,
-	t: [f64; 4],
-	c0: *mut f64,
-	c1: *mut f64,
-	c2: *mut f64,
-	c3: *mut f64,
-	len: usize,
-) {
-	use crate::lanes::F64x2;
-	let v = [
-		F64x2::splat(t[0]),
-		F64x2::splat(t[1]),
-		F64x2::splat(t[2]),
-		F64x2::splat(t[3]),
-	];
-	let mut i = 0usize;
-	while i + 2 <= len {
-		let av = F64x2::load(a.add(i));
-		F64x2::load(c0.add(i)).add(av.mul(v[0])).store(c0.add(i));
-		F64x2::load(c1.add(i)).add(av.mul(v[1])).store(c1.add(i));
-		F64x2::load(c2.add(i)).add(av.mul(v[2])).store(c2.add(i));
-		F64x2::load(c3.add(i)).add(av.mul(v[3])).store(c3.add(i));
-		i += 2;
-	}
-	while i < len {
-		let av = *a.add(i);
-		*c0.add(i) += av * t[0];
-		*c1.add(i) += av * t[1];
-		*c2.add(i) += av * t[2];
-		*c3.add(i) += av * t[3];
-		i += 1;
 	}
 }
 

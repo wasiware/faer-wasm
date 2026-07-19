@@ -87,7 +87,26 @@ re-derivation of the project goals. The decisions, in plain terms:
   list with evidence per row is `docs/blas-layer-plan-2026-07.md`,
   and the layer has its home: the `blas/` crate — one folder per
   BLAS level, one file per function, the plan table in its README.
-- **The f64 BLAS layer is COMPLETE** (2026-07-18): Level 3's six
+- **The f64 tuning pass is under way and paying off** (2026-07-18/19):
+  before cloning the layer into the other number types, we're making
+  the f64 loops fast (Andy's revised sequencing — the clones then
+  inherit the speed for free). Three rounds so far. (1) Matrix
+  multiply got two tuned shapes — a register-tiled version for small
+  matrices and a stream-friendly four-column version for large — and
+  now **beats faer at every size we measure** (1.25–1.8×, confirmed
+  on two CI machines); the right shape is picked automatically by
+  size, invisibly, because both produce bit-identical results. (2)
+  The summing functions (dot, absolute-sum, norm) now use four
+  parallel accumulators — 1.4–2.2× faster on the container. (3) The
+  same two blocked shapes were carried through matrix×vector and all
+  six matrix–matrix functions: every one gained 10–30% on the
+  container (the matrix–matrix family moved from 41–52% to 48–56% of
+  the machine's arithmetic limit). Results stay bit-for-bit identical
+  to the plain loops everywhere the math allows — locked by tests —
+  with the two unavoidable reorderings documented and tested to their
+  own fixed order. CI-machine confirmation of rounds 2–3 is queued;
+  remaining levers: a fused symmetric-multiply pass, and the
+  faster-multiply-instruction (FMA) build variants.
   matrix–matrix functions landed the same way — matrix multiply is
   literally "matrix × vector, once per column", and so on down; the
   whole 23-function layer is four loop shapes plus one scalar
@@ -95,9 +114,10 @@ re-derivation of the project goals. The decisions, in plain terms:
   check (21 probes), and speed-scored: the matrix–matrix ops run at
   34–44% of the machine's arithmetic speed limit — matching what the
   original experiment measured for the simple loop that beat faer, and
-  the headroom the tuning pass will chase. Two CI machines agreed
-  within 1% on every row. Andy's sequencing is now the plan of
-  record: other number types next, then tuning, and no LAPACK work
+  the headroom the tuning pass is now chasing (see the bullet above).
+  Two CI machines agreed within 1% on every row. Andy's sequencing is
+  the plan of record — revised same day to tune-first: tune and
+  benchmark f64, then the other number types, and no LAPACK work
   until the BLAS layer is done.
 - **Level 2 is built** (2026-07-18): all seven matrix–vector functions
   (multiply, transpose multiply, rank-1/2 updates, symmetric multiply,

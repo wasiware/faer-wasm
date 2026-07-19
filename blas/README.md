@@ -11,8 +11,10 @@ consumer wants it). All ten functions shipped with correctness tests
 (`tests/level1.rs`, 12 tests) and runner-measured roofline rows
 (`../bench/l1-roofline.mjs`): the read-modify-write streams run at
 81–100% of the machine's fastest same-run stream, copy/dot at the
-read-path (triad) ceiling, reductions at 60–80% of triad (recorded
-lever: more accumulator registers). Reductions are bit-identical
+read-path (triad) ceiling; the reductions run 4 accumulator registers
+since tuning lever 2 (2.2×/2.1×/1.4× on asum/nrm2/dot at n=2048,
+container-measured; runner confirmation pending). Reductions are
+bit-identical
 native ↔ wasm by construction (`src/lanes.rs` emulates the SIMD lane
 structure elementwise off-wasm — verified 4/4 probes on the container
 and both runner draws). Full record: `../docs/blas-ab-2026-07.md`
@@ -22,21 +24,30 @@ step 3.
 determinism probes bit-identical, runner roofline in the same doc,
 step 4): every function is a loop of Level 1 calls over column slices
 — the classification table below is literally the module structure.
-The rank-1 updates run at 83–100% of ceiling; gemv-class ops at
-~half the read ceiling (recorded levers: 2-column blocking, fused
-symv pass — tuning-campaign material, after the LAPACK re-route shows
-what dominates end-to-end).
+The rank-1 updates run at 83–100% of ceiling; gemv ships 4-column
+fan-in blocking since the tuning campaign (39→51% of ceiling on the
+container); remaining recorded levers: fused symv pass, gemv_t/trmv
+blocking.
 
 **Level 3 is implemented — the f64 layer is complete** (2026-07-18):
-23 functions, 27 tests, 21 cross-target determinism probes (all
+23 functions, 30 tests, 21 cross-target determinism probes (all
 bit-identical native ↔ wasm on the container and every runner draw),
 roofline rows for every operation (`../docs/blas-ab-2026-07.md` steps
-3–5). Level 3 runs at 34–44% of the machine's arithmetic peak — the
-step-1 headroom the tuning campaign chases (micro-tiling, per-op FMA).
+3–5).
 
-Sequencing (Andy, 2026-07-18; ROADMAP "BLAS campaign sequencing"):
-next the other number types (f32, c64), then tuning, then — only
-then — LAPACK work resumes.
+**The f64 tuning campaign is in progress** (steps 6–7 in the same
+doc): gemm now dispatches a 4×4 register tile / 4-column fan-out by
+size and beats faer's blocked gemm at every measured size (two runner
+draws); the reductions run 4 accumulators; the two shared blocked
+kernels (`src/kernels.rs`) carry the fan-out/fan-in shapes through
+gemv and the rest of Level 3 (container-measured gains on every
+touched op; runner confirmation pending). Remaining levers are listed
+in ROADMAP.
+
+Sequencing (Andy, 2026-07-18, revised same day; ROADMAP "BLAS
+campaign sequencing"): finish tuning + benchmarking f64 first, then
+clone the tuned layer into the other number types (f32, c64), then —
+only then — LAPACK work resumes.
 
 Gaps: f32/c64 variants queued; c32 undecided (never shipped anywhere
 in the project); FMA variants per-op-measured as built; transpose
@@ -68,8 +79,14 @@ math allows:
   n-scaled floating-point error bounds. `iamax` is the exception that
   IS exact: the returned index, including BLAS's first-occurrence
   tie-breaking rule, must match precisely.
-- *Level 2/3*: agreement with a reference implementation within
-  n-scaled error bounds.
+- *Level 2/3*: **bit-for-bit against a same-order scalar replay**
+  wherever the operation's add order is deterministic (gemv, ger,
+  syr/syr2, trmv, trsv, and all of Level 3 except `symm_left`) — this
+  is also what lets tuned loop shapes ship invisibly: a blocked
+  variant must reproduce the replay's bits or document its reorder
+  and mirror it in the replay. Plus independent n-scaled error bounds
+  computed in a different accumulation order (and residual checks for
+  the solves).
 - *Everything*: **native ↔ wasm bit-identical for our own code** — the
   project's standing determinism guarantee. Cross-target difference is
   a bug, not noise.
@@ -101,6 +118,19 @@ scalar function**:
 arithmetic, inlined branch-free into the sweep loops that call it
 (LAPACK's overflow guards kept — proven numerics).
 
+The tuning campaign (2026-07-18/19) blocks the column shapes four
+columns at a time without changing any of them — two shared kernels in
+`src/kernels.rs` do all the work: **fan-out** (one source column
+streamed once into four destination columns — source traffic 4× down)
+and **fan-in** (four source columns accumulated in one pass over the
+destination — destination read-modify-write traffic 4× down); gemm
+additionally carries a 4×4 register tile for small matrices. Both
+kernels preserve the per-element rounding sequence, so tuned ops stay
+bit-for-bit against their plain column-axpy replays (the two
+triangular right-side cases whose elimination order forbids that
+document their reorder and the tests mirror it). The table rows note
+which blocked shape each op ships with.
+
 Per-operation FMA variant choice (measured, step-1 three-way race):
 fused for `trmm`/`trsm`/`gemv`, plain for `gemm`/`syrk`; the rest
 measured as built. Banded/packed forms are not planned — no consumer
@@ -125,7 +155,7 @@ demand. Evidence per row: `../docs/blas-ab-2026-07.md`.
 
 | BLAS | mathematical name | implementation |
 |---|---|---|
-| `gemv` | matrix × vector | column-axpy |
+| `gemv` | matrix × vector | column-axpy, 4-column fan-in |
 | `ger` | outer-product update (rank-1) | column-axpy |
 | `symv` | symmetric matrix × vector | column-axpy |
 | `trmv` | triangular matrix × vector | column-axpy |
@@ -136,8 +166,8 @@ demand. Evidence per row: `../docs/blas-ab-2026-07.md`.
 
 | BLAS | mathematical name | implementation |
 |---|---|---|
-| `gemm` | matrix multiplication | column-axpy |
-| `syrk` | Gram-matrix update (αAAᵀ + βC) | column-axpy |
-| `trmm` | triangular matrix multiplication | column-axpy |
-| `symm` / `syr2k` | symmetric multiply / rank-2k update | column-axpy |
-| `trsm` | triangular solve, many right-hand sides | divide-then-column-axpy |
+| `gemm` | matrix multiplication | column-axpy, size-dispatched 4×4 tile / 4-column fan-out |
+| `syrk` | Gram-matrix update (αAAᵀ + βC) | column-axpy, 4-column fan-out |
+| `trmm` | triangular matrix multiplication | column-axpy, 4-column fan-out |
+| `symm` / `syr2k` | symmetric multiply / rank-2k update | column-axpy, 4-column fan-out (left symm: symv per column) |
+| `trsm` | triangular solve, many right-hand sides | divide-then-column-axpy, 4-column fan-out |
