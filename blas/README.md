@@ -5,14 +5,18 @@ The wasm-native BLAS layer, built as its own finished product per the
 bulk work onto this crate as it fills in. One file per BLAS routine
 per number type in netlib naming (`daxpy.rs`, `saxpy.rs`, … —
 convention: `src/L1/README.md`), one folder per level; this README is
-the plan of record for the layer. Companion maps: `src/README.md`
-(who calls whom), `bench/README.md` (the measured benchmarks),
-`tests/README.md` (the bit-identical test results).
+the plan of record for the layer. Counting convention, used
+everywhere: **23 routines** per type (netlib names = files; flag
+variants folded, so gemv covers N/T and symm/trmm/trsm cover both
+sides) which split into **27 distinct operations** (the call-graph
+nodes). Companion maps: `src/README.md` (who calls whom),
+`bench/README.md` (the measured benchmarks), `tests/README.md` (the
+bit-identical test results).
 
 **Status: the f64 layer is COMPLETE and TUNED — campaign closed
 2026-07-19** (f64, unit stride — callers pass contiguous column
 slices; strided access defeats streaming and no consumer wants it).
-23 functions, 30 tests, 21 cross-target determinism probes, a
+23 routines (27 operations), 30 tests, 21 determinism probes, a
 runner-measured roofline row for every operation, every tuning verdict
 backed by two reference-machine draws. Full record:
 `../docs/blas-ab-2026-07.md` steps 3–9. Where the layer landed:
@@ -43,7 +47,7 @@ bit-identity — an architect decision, recorded in ROADMAP.
 f64") — the tuned f64 layer cloned one-for-one (the s-routines): same
 shapes, same testing contract, on four f32 lanes per
 register (`lanes::F32x4`, bit-identical native emulation). 23
-functions, 30 mirrored tests (60 crate-wide), 21 f32 determinism
+routines, 30 mirrored tests (60 crate-wide), 21 f32 determinism
 probes; reduction bounds check against an f64-accumulated reference.
 Deliberate differences, both measured: the gemm register tile covers
 8 rows × 4 columns (same register count, double lane width), and the

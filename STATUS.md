@@ -145,8 +145,8 @@ re-derivation of the project goals. The decisions, in plain terms:
 - **The f64 BLAS layer is COMPLETE** (2026-07-18): Level 3's six
   matrix–matrix functions landed the same way — matrix multiply is
   literally "matrix × vector, once per column", and so on down; the
-  whole 23-function layer is four loop shapes plus one scalar
-  function. Tested (30 tests), identical bits native/wasm on every
+  whole layer — 23 routines per number type — is four loop shapes
+  plus one scalar function. Tested (30 tests), identical bits native/wasm on every
   check (21 probes), and speed-scored: at build time the
   matrix–matrix ops ran at 34–44% of the machine's arithmetic speed
   limit — matching what the original experiment measured for the
