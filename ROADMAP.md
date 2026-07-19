@@ -36,16 +36,18 @@ clones inherit tuned shapes for free instead of re-tuning ×3):
 1. **f64 Level 3** completes the f64 layer — DONE 2026-07-18;
 2. **tune + benchmark f64** — IN PROGRESS. Done: gemm dispatch
    (tiled4x4 ≤1.5MB of A / col4 above — beats faer 1.25–1.8× at every
-   size, two runner draws, docs step 6); 4-accumulator reductions
-   (asum 2.2×, nrm2 2.1×, dot 1.4× on the container); blocked shapes
-   carried through gemv + all of Level 3 via shared fan-out/fan-in
-   kernels (`blas/src/kernels.rs`) — every touched op gained 10–30%
-   on the container, docs step 7. RUNNER CONFIRMATION PENDING for the
-   reductions and the step-7 batch (one draw pair covers both:
-   l1+l2+l3 rooflines). Remaining levers: fused symv (symm_left rides
-   on it); iamax fused pass; gemv_t/trmv/trsv fan-in blocking
-   (recorded, unmeasured); per-op FMA variants (relaxed-simd build);
-   then re-run the faer race and the rooflines to close;
+   size, two runner draws, docs step 6); 4-accumulator reductions —
+   RUNNER CONFIRMED both draws, dot now AT the triad read ceiling,
+   nrm2/asum 73–97% of triad, gemv_t inherited the gain through
+   composition; blocked shapes carried through gemv + all of Level 3
+   via shared fan-out/fan-in kernels (`blas/src/kernels.rs`) — RUNNER
+   CONFIRMED both draws: gemv 29–31 GB/s (was ~17), L3 family 48–56%
+   of peak (was 34–44%) (runs 29669397117/29669395117, docs step 7).
+   Remaining levers: fused symv (landed, container-measured ~5% — the
+   4-column grouped variant in test now; symm_left rides on it);
+   iamax fused pass; trmv/trsv fan-in blocking (recorded,
+   unmeasured); per-op FMA variants (relaxed-simd build); then re-run
+   the faer race and the rooflines to close;
 3. **the other number types** — the tuned layer cloned into f32 and
    c64 (c32: decide when reached — nothing has ever shipped c32);
 4. **only then** does any LAPACK-layer work resume (the kernel

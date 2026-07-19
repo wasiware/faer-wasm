@@ -12,9 +12,9 @@ consumer wants it). All ten functions shipped with correctness tests
 (`../bench/l1-roofline.mjs`): the read-modify-write streams run at
 81–100% of the machine's fastest same-run stream, copy/dot at the
 read-path (triad) ceiling; the reductions run 4 accumulator registers
-since tuning lever 2 (2.2×/2.1×/1.4× on asum/nrm2/dot at n=2048,
-container-measured; runner confirmation pending). Reductions are
-bit-identical
+since tuning lever 2 — runner-confirmed on both draws: dot AT the
+triad read ceiling, nrm2/asum at 73–97% of it (was 60–80%).
+Reductions are bit-identical
 native ↔ wasm by construction (`src/lanes.rs` emulates the SIMD lane
 structure elementwise off-wasm — verified 4/4 probes on the container
 and both runner draws). Full record: `../docs/blas-ab-2026-07.md`
@@ -25,9 +25,10 @@ determinism probes bit-identical, runner roofline in the same doc,
 step 4): every function is a loop of Level 1 calls over column slices
 — the classification table below is literally the module structure.
 The rank-1 updates run at 83–100% of ceiling; gemv ships 4-column
-fan-in blocking since the tuning campaign (39→51% of ceiling on the
-container); remaining recorded levers: fused symv pass, gemv_t/trmv
-blocking.
+fan-in blocking since the tuning campaign — runner-confirmed 29–31
+GB/s vs ~17 before — and gemv_t rose to 22–29 GB/s untouched, by
+inheriting the 4-accumulator dot through composition. Remaining
+recorded levers: fused symv pass (in test), trmv/trsv blocking.
 
 **Level 3 is implemented — the f64 layer is complete** (2026-07-18):
 23 functions, 30 tests, 21 cross-target determinism probes (all
@@ -38,11 +39,11 @@ roofline rows for every operation (`../docs/blas-ab-2026-07.md` steps
 **The f64 tuning campaign is in progress** (steps 6–7 in the same
 doc): gemm now dispatches a 4×4 register tile / 4-column fan-out by
 size and beats faer's blocked gemm at every measured size (two runner
-draws); the reductions run 4 accumulators; the two shared blocked
-kernels (`src/kernels.rs`) carry the fan-out/fan-in shapes through
-gemv and the rest of Level 3 (container-measured gains on every
-touched op; runner confirmation pending). Remaining levers are listed
-in ROADMAP.
+draws); the reductions run 4 accumulators; the shared blocked kernels
+(`src/kernels.rs`) carry the fan-out/fan-in shapes through gemv and
+the rest of Level 3 — all runner-confirmed on two draws (L3 family
+48–56% of arithmetic peak, was 34–44%; runs 29669397117/29669395117).
+Remaining levers are listed in ROADMAP.
 
 Sequencing (Andy, 2026-07-18, revised same day; ROADMAP "BLAS
 campaign sequencing"): finish tuning + benchmarking f64 first, then

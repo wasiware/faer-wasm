@@ -104,9 +104,15 @@ re-derivation of the project goals. The decisions, in plain terms:
   the machine's arithmetic limit). Results stay bit-for-bit identical
   to the plain loops everywhere the math allows — locked by tests —
   with the two unavoidable reorderings documented and tested to their
-  own fixed order. CI-machine confirmation of rounds 2–3 is queued;
-  remaining levers: a fused symmetric-multiply pass, and the
-  faster-multiply-instruction (FMA) build variants.
+  own fixed order. Rounds 2–3 are now CI-machine confirmed on two
+  draws: the dot product runs at the machine's memory read limit,
+  matrix×vector at 1.75× its old speed, and the matrix–matrix family
+  at 48–56% of the arithmetic limit (was 34–44%). A bonus finding:
+  transpose-matrix×vector got 1.3–1.7× faster without being touched —
+  it's built as a loop of dot products, so the dot improvement flowed
+  through, which is exactly why the layer is structured as
+  compositions. Remaining levers: a fused symmetric-multiply pass (in
+  test), and the faster-multiply-instruction (FMA) build variants.
   matrix–matrix functions landed the same way — matrix multiply is
   literally "matrix × vector, once per column", and so on down; the
   whole 23-function layer is four loop shapes plus one scalar
