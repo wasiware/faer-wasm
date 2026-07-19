@@ -18,6 +18,39 @@ if (!wasmPath) {
 	console.error('usage: PYODIDE_PATH=<pyodide.mjs> node pyodide-vs-faer.mjs <bench-wasm>');
 	process.exit(2);
 }
+// TEMPORARY ROUTING (close-out draws: hemv grouping race + complex
+// gemm market race — revert after draws):
+{
+	const { execSync } = await import('node:child_process');
+	const run = (cmd, cwd) => execSync(cmd, { cwd, stdio: 'inherit' });
+	const bb = '../blas/bench';
+	run('cargo build --release --target wasm32-unknown-unknown --lib', bb);
+	const bw = bb + '/target/wasm32-unknown-unknown/release/blas_bench.wasm';
+	// 1) hemv grouping race, interleaved at n=2048
+	const { instance: bi } = await WebAssembly.instantiate(readFileSync(bw), {});
+	const eb = bi.exports;
+	eb.setup(2048);
+	const time = (op) => {
+		let s = eb.run_hemv_ab(op);
+		let best = Infinity;
+		for (let r = 0; r < 6; r++) {
+			const t0 = performance.now();
+			for (let i = 0; i < 8; i++) s += eb.run_hemv_ab(op);
+			best = Math.min(best, (performance.now() - t0) / 8);
+		}
+		if (!Number.isFinite(s)) throw new Error('hemv ab non-finite');
+		return best;
+	};
+	console.log('## hemv grouping race (n=2048, ms/call, interleaved)');
+	for (const [name, op] of [['zhemv', 0], ['zhemv_grouped', 1], ['chemv', 2], ['chemv_grouped', 3]])
+		console.log(`${name}: ${time(op).toFixed(3)}`);
+	// second interleaved pass to expose within-run drift
+	for (const [name, op] of [['zhemv', 0], ['zhemv_grouped', 1], ['chemv', 2], ['chemv_grouped', 3]])
+		console.log(`${name} (pass 2): ${time(op).toFixed(3)}`);
+	// 2) complex gemm market race (needs this harness's own wasm)
+	run(`node cplx-gemm-ab.mjs ${process.argv[2]} ${bw}`, '.');
+	process.exit(0);
+}
 const SIZES = [64, 128, 256, 512];
 // [name, faer bench export, faer args (fixed), python lambda body]
 // The *_tuned rows use the docs/wasm.md §7 parameters — the honest current
