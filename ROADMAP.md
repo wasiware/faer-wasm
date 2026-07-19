@@ -54,7 +54,14 @@ clones inherit tuned shapes for free instead of re-tuning ×3):
    bit-identity guarantee; step-1 evidence says they'd help
    trmm/trsm/gemv and hurt syrk;
 3. **the other number types** — the tuned layer cloned into f32 and
-   c64 (c32: decide when reached — nothing has ever shipped c32);
+   c64 (c32: decide when reached — nothing has ever shipped c32).
+   f32: DONE 2026-07-19, two runner draws (`blas/src/f32/`, 23 fns,
+   30 mirrored tests, 21 probes bit-identical both draws, rooflines +
+   dispatch race — docs step 10: peak ~1.8× f64, L3 at the same
+   fractions of it; deliberate deviations from a verbatim clone: 8×4
+   gemm tile, 3 MB dispatch threshold at the runner-raced f32
+   crossover. Recorded, not chased: f32 iamax at ~8% of ceiling —
+   the scalar index rescan is per-element and dominates). c64 next;
 4. **only then** does any LAPACK-layer work resume (the kernel
    re-route onto the layer included).
 

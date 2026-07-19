@@ -35,14 +35,31 @@ the campaign close**: wasm relaxed-madd rounding is
 implementation-dependent, so shipping them trades away cross-target
 bit-identity — an architect decision, recorded in ROADMAP.
 
-Sequencing (Andy, 2026-07-18, revised same day; ROADMAP "BLAS
-campaign sequencing"): f64 tuned first — DONE; next the tuned layer is
-cloned into the other number types (f32, c64), then — only then —
-LAPACK work resumes.
+**The f32 layer is built** (2026-07-19, Andy: "same treatment as
+f64") — `src/f32/`, the tuned f64 layer cloned one-for-one: same
+files, same loop shapes, same testing contract, on four f32 lanes per
+register (`f32::lanes::F32x4`, bit-identical native emulation). 23
+functions, 30 mirrored tests (60 crate-wide), 21 f32 determinism
+probes; reduction bounds check against an f64-accumulated reference.
+Deliberate differences, both measured: the gemm register tile covers
+8 rows × 4 columns (same register count, double lane width), and the
+tile/col4 dispatch threshold is 3 MB of A — the f32 crossover raced
+on both runner draws (tiled unanimous through n=512, col4 unanimous
+at 1024; the container said the opposite and was overruled).
+Consumer path: `faer_wasm_blas::f32::level{1,2,3}`. Runner rooflines
+in `../docs/blas-ab-2026-07.md` step 10: f32 arithmetic peak ~1.8×
+f64's, the L3 family at the same fractions of it (48–58%, symm_left
+79–82%), reductions on the read path, 21 probes bit-identical on
+both draws.
 
-Gaps: f32/c64 variants queued; c32 undecided (never shipped anywhere
+Sequencing (Andy, 2026-07-18, revised same day; ROADMAP "BLAS
+campaign sequencing"): f64 tuned first — DONE; the tuned layer is
+being cloned into the other number types (f32 — DONE; c64 next),
+then — only then — LAPACK work resumes.
+
+Gaps: c64 variant queued; c32 undecided (never shipped anywhere
 in the project); FMA variants deferred (above); transpose forms of
-gemm/trmv/trsv/trmm/trsm not built (no consumer yet); the
+gemm/trmv/trsv/trmm/trsm not built (no consumer yet, both types); the
 `cd blas && cargo test` CI gate line still needs adding to the
 workflow (session tokens can't edit workflow files).
 
@@ -117,7 +134,8 @@ streamed once into four destination columns — source traffic 4× down),
 over the destination — destination read-modify-write traffic 4× down),
 and the **fused symv pass** (`axpy_dot`/`axpy_dot4`: one column load
 serves both triangles of the symmetric update); gemm additionally
-carries a 4×4 register tile for small matrices. The fan-out/fan-in
+carries a register tile for small matrices (4×4 in f64, 8×4 in f32 —
+same register count at each lane width). The fan-out/fan-in
 kernels preserve the per-element rounding sequence, so tuned ops stay
 bit-for-bit against their plain column-axpy replays (the two
 triangular right-side cases whose elimination order forbids that

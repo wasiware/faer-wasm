@@ -87,6 +87,22 @@ re-derivation of the project goals. The decisions, in plain terms:
   list with evidence per row is `docs/blas-layer-plan-2026-07.md`,
   and the layer has its home: the `blas/` crate — one folder per
   BLAS level, one file per function, the plan table in its README.
+- **The f32 BLAS layer is built** (2026-07-19): the tuned f64 layer
+  cloned function-for-function into single precision — same loops,
+  same tests, same identical-bits-everywhere guarantee (checked on
+  both CI machines). Single precision packs four numbers per SIMD
+  register instead of two, and it delivered: the machine's f32
+  arithmetic limit measures ~1.8× its f64 limit, and our
+  matrix–matrix functions hold the same fraction of that higher
+  limit (48–58%, symmetric multiply 79–82%) — the tuned loop shapes
+  transferred without re-tuning. Two small deliberate differences,
+  both settled by racing on the CI machines: a taller multiply tile,
+  and a different matrix-size threshold for switching multiply
+  strategies (the dev container disagreed with the CI machines on
+  where — the CI machines won, per the standing rule). One honest
+  weak spot recorded: f32 find-largest-element sits at ~8% of the
+  memory limit because its element-by-element index scan doesn't get
+  faster with narrower numbers — a known lever for a later pass.
 - **The f64 tuning pass is DONE — campaign closed 2026-07-19**:
   before cloning the layer into the other number types, the f64
   loops were made fast (Andy's revised sequencing — the clones

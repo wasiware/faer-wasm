@@ -16,10 +16,10 @@ use crate::f32::level2::gemv;
 /// C ← αAB + βC. A is m×k, B is k×n, C is m×n; each matrix has its own
 /// column stride.
 ///
-/// Dispatches by A's byte size at the container-raced f32 crossover
-/// (the register tile wins while A rides the caches, the 4-column
-/// fused stream wins above). All three shapes are bit-for-bit
-/// identical, so the dispatch is invisible to results.
+/// Dispatches by A's byte size at the runner-raced f32 crossover (the
+/// register tile wins while A rides the caches, the 4-column fused
+/// stream wins above; two draws, docs step 10). All three shapes are
+/// bit-for-bit identical, so the dispatch is invisible to results.
 #[allow(clippy::too_many_arguments)]
 pub fn gemm(
 	alpha: f32,
@@ -34,12 +34,12 @@ pub fn gemm(
 	c: &mut [f32],
 	ccs: usize,
 ) {
-	// f32 crossover raced on the container (docs step 10): tiled wins
-	// clearly at n=256 (0.25 MB of A), ties col4 at n=512 (1 MB), loses
-	// beyond — the 8-row tile crosses earlier than the f64 4-row tile's
-	// 1.5 MB. Threshold set between the measured points; runner
-	// confirmation with the step-10 draws.
-	const TILED_MAX_A_BYTES: usize = 3 << 18; // 0.75 MB
+	// f32 crossover from the step-10 runner draws (which rule over the
+	// container, where col4 led from n=512): tiled wins unanimously
+	// through n=512, n=768 splits within noise, col4 wins unanimously
+	// at n=1024 — the 8-row tile survives LONGER in bytes than the f64
+	// 4-row tile's 1.5 MB. Threshold set between the unanimous points.
+	const TILED_MAX_A_BYTES: usize = 3 << 20; // 3 MB
 	if m * k * 4 <= TILED_MAX_A_BYTES {
 		gemm_tiled(alpha, m, k, n, a, acs, b, bcs, beta, c, ccs);
 	} else {
