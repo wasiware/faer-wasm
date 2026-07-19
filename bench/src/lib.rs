@@ -17,9 +17,6 @@ struct State {
     a: Mat<f64>,
     b: Mat<f64>,
     sym: Mat<f64>,
-    // a's values with a dominant diagonal: triangular solves/multiplies
-    // stay bounded across repeated bench iterations
-    tri: Mat<f64>,
     rhs: Mat<f64>,
     ac: Mat<faer::c64>,
     bc: Mat<faer::c64>,
@@ -28,6 +25,9 @@ struct State {
     a32: Mat<f32>,
     b32: Mat<f32>,
     rhs32: Mat<f32>,
+    // c32 twins (ac/bc cast) for the complex market races
+    ac32: Mat<faer::c32>,
+    bc32: Mat<faer::c32>,
 }
 
 struct StateCell(core::cell::UnsafeCell<Option<State>>);
@@ -58,10 +58,6 @@ pub extern "C" fn setup(n: usize) {
     for i in 0..n {
         sym[(i, i)] += 2.0 * n as f64;
     }
-    let mut tri = a.to_owned();
-    for i in 0..n {
-        tri[(i, i)] = 2.0 * n as f64 + 1.0;
-    }
     let rhs = fill(n, 1, 0x853C49E6748FEA9B);
     // c64 twins of a/b/rhs for the complex ops
     let re = fill(n, n, 0x2545F4914F6CDD1D);
@@ -76,7 +72,52 @@ pub extern "C" fn setup(n: usize) {
     let a32 = Mat::from_fn(n, n, |i, j| a[(i, j)] as f32);
     let b32 = Mat::from_fn(n, n, |i, j| b[(i, j)] as f32);
     let rhs32 = Mat::from_fn(n, 1, |i, j| rhs[(i, j)] as f32);
-    unsafe { *STATE.0.get() = Some(State { a, b, sym, tri, rhs, ac, bc, rhsc, a32, b32, rhs32 }) }
+    let ac32 = Mat::from_fn(n, n, |i, j| faer::c32::new(ac[(i, j)].re as f32, ac[(i, j)].im as f32));
+    let bc32 = Mat::from_fn(n, n, |i, j| faer::c32::new(bc[(i, j)].re as f32, bc[(i, j)].im as f32));
+    unsafe {
+        *STATE.0.get() =
+            Some(State { a, b, sym, rhs, ac, bc, rhsc, a32, b32, rhs32, ac32, bc32 })
+    }
+}
+
+/// faer's blocked complex gemm rows for the market race against the
+/// blas layer's zgemm/cgemm (close-out campaign): matmul() into a
+/// per-call zeroed Mat, mirroring run_blas_ab(4,0)'s shape. variant:
+/// 0 = c64, 1 = c32.
+#[no_mangle]
+pub extern "C" fn run_gemm_faer_cplx(variant: usize) -> f64 {
+    use faer::linalg::matmul::matmul;
+    use faer::Accum;
+    let s = state();
+    match variant {
+        0 => {
+            let n = s.ac.nrows();
+            let mut c = Mat::<faer::c64>::zeros(n, n);
+            matmul(
+                c.as_mut(),
+                Accum::Replace,
+                s.ac.as_ref(),
+                s.bc.as_ref(),
+                faer::c64::new(1.0, 0.0),
+                Par::Seq,
+            );
+            c[(0, 0)].re + c[(n - 1, n - 1)].im
+        }
+        1 => {
+            let n = s.ac32.nrows();
+            let mut c = Mat::<faer::c32>::zeros(n, n);
+            matmul(
+                c.as_mut(),
+                Accum::Replace,
+                s.ac32.as_ref(),
+                s.bc32.as_ref(),
+                faer::c32::new(1.0, 0.0),
+                Par::Seq,
+            );
+            (c[(0, 0)].re + c[(n - 1, n - 1)].im) as f64
+        }
+        _ => f64::NAN,
+    }
 }
 
 #[no_mangle]
@@ -1383,336 +1424,6 @@ fn state_mut() -> &'static mut State {
     unsafe { (*STATE.0.get()).as_mut().expect("call setup(n) first") }
 }
 
-#[no_mangle]
-pub extern "C" fn run_l1_layer(op: usize) -> f64 {
-    use faer_wasm_blas::level1 as l1;
-    let s = state_mut();
-    let n = s.a.nrows();
-    let acs = s.a.as_ref().col_stride() as usize;
-    let bcs = s.b.as_ref().col_stride() as usize;
-    let ap = s.a.as_mut().as_ptr_mut();
-    let bp = s.b.as_mut().as_ptr_mut();
-    let col = |p: *mut f64, cs: usize, j: usize| unsafe {
-        core::slice::from_raw_parts_mut(p.add(j * cs), n)
-    };
-    let mut sink = 0.0f64;
-    match op {
-        0 => {
-            for j in 0..n {
-                l1::copy(col(ap, acs, j), col(bp, bcs, j));
-            }
-            sink += unsafe { *bp };
-        }
-        1 => {
-            for j in 0..n {
-                l1::swap(col(ap, acs, j), col(bp, bcs, j));
-            }
-            sink += unsafe { *ap };
-        }
-        2 => {
-            for j in 0..n {
-                l1::scal(-1.0, col(ap, acs, j));
-            }
-            sink += unsafe { *ap };
-        }
-        3 => {
-            for j in 0..n {
-                l1::axpy(0.001, col(ap, acs, j), col(bp, bcs, j));
-            }
-            sink += unsafe { *bp };
-        }
-        4 => {
-            for j in 0..n {
-                l1::rot(col(ap, acs, j), col(bp, bcs, j), 0.8, 0.6);
-            }
-            sink += unsafe { *ap };
-        }
-        5 => {
-            for j in 0..n {
-                sink += l1::dot(col(ap, acs, j), col(bp, bcs, j));
-            }
-        }
-        6 => {
-            for j in 0..n {
-                sink += l1::nrm2(col(ap, acs, j));
-            }
-        }
-        7 => {
-            for j in 0..n {
-                sink += l1::asum(col(ap, acs, j));
-            }
-        }
-        8 => {
-            for j in 0..n {
-                sink += l1::iamax(col(ap, acs, j)) as f64;
-            }
-        }
-        _ => return f64::NAN,
-    }
-    sink
-}
-
-/// Level-2 roofline rows over the persistent state. op: 0 gemv,
-/// 1 gemv_t, 2 ger, 3 symv, 4 trmv, 5 trsv, 6 syr, 7 syr2. Mutating
-/// targets and constants chosen so values stay bounded across bench
-/// iterations (small alpha on accumulating updates; trmv/trsv copy a
-/// fresh x from b's first column each call — 8n bytes, noise next to
-/// the 4·n²–16·n² the matrix stream moves).
-#[no_mangle]
-pub extern "C" fn run_l2_layer(op: usize) -> f64 {
-    use faer_wasm_blas::level1 as l1;
-    use faer_wasm_blas::level2 as l2;
-    let s = state_mut();
-    let n = s.a.nrows();
-    let acs = s.a.as_ref().col_stride() as usize;
-    let scs = s.sym.as_ref().col_stride() as usize;
-    let tcs = s.tri.as_ref().col_stride() as usize;
-    let a_len = if n == 0 { 0 } else { acs * (n - 1) + n };
-    let s_len = if n == 0 { 0 } else { scs * (n - 1) + n };
-    let t_len = if n == 0 { 0 } else { tcs * (n - 1) + n };
-    let a = unsafe { core::slice::from_raw_parts(s.a.as_ref().as_ptr(), a_len) };
-    let bx = unsafe { core::slice::from_raw_parts(s.b.as_ref().as_ptr(), n) }; // b's first column
-    let sym = unsafe { core::slice::from_raw_parts_mut(s.sym.as_mut().as_ptr_mut(), s_len) };
-    let tri = unsafe { core::slice::from_raw_parts(s.tri.as_ref().as_ptr(), t_len) };
-    let y = unsafe { core::slice::from_raw_parts_mut(s.rhs.as_mut().as_ptr_mut(), n) };
-    match op {
-        0 => l2::gemv(0.001, n, n, a, acs, bx, 0.5, y),
-        1 => l2::gemv_t(0.001, n, n, a, acs, bx, 0.5, y),
-        2 => l2::ger(0.0001, n, n, sym, scs, bx, bx),
-        3 => l2::symv(0.001, n, sym, scs, true, bx, 0.5, y),
-        4 => {
-            l1::copy(bx, y);
-            l2::trmv(n, tri, tcs, false, false, y);
-        }
-        5 => {
-            l1::copy(bx, y);
-            l2::trsv(n, tri, tcs, false, false, y);
-        }
-        6 => l2::syr(0.0001, n, sym, scs, true, bx),
-        7 => l2::syr2(0.0001, n, sym, scs, true, bx, bx),
-        _ => return f64::NAN,
-    }
-    y[0] + sym[0] + y[n - 1]
-}
-
-/// Level-2 cross-target determinism probes: fixed LCG-filled 257×257
-/// matrix (odd size — tails everywhere), one op each, folded to one
-/// value with the layer's own asum. op: 0 gemv, 1 gemv_t, 2 ger,
-/// 3 symv, 4 trmv, 5 trsv, 6 syr, 7 syr2.
-#[no_mangle]
-pub extern "C" fn run_l2_probe(op: usize) -> f64 {
-    use faer_wasm_blas::level1 as l1;
-    use faer_wasm_blas::level2 as l2;
-    const N: usize = 257;
-    let mut s = 7u64;
-    let mut next = || {
-        s = s
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        ((s >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0
-    };
-    let mut a = Mat::from_fn(N, N, |_, _| next());
-    for i in 0..N {
-        a[(i, i)] = 2.0 * N as f64 + 1.0; // solve-safe diagonal
-    }
-    let cs = a.as_ref().col_stride() as usize;
-    let a_len = cs * (N - 1) + N;
-    let x: [f64; N] = core::array::from_fn(|_| next());
-    let mut y: [f64; N] = core::array::from_fn(|_| next());
-    let am = unsafe { core::slice::from_raw_parts_mut(a.as_mut().as_ptr_mut(), a_len) };
-    match op {
-        0 => l2::gemv(0.7, N, N, am, cs, &x, 0.3, &mut y),
-        1 => l2::gemv_t(0.7, N, N, am, cs, &x, 0.3, &mut y),
-        2 => l2::ger(0.7, N, N, am, cs, &x, &x),
-        3 => l2::symv(0.7, N, am, cs, true, &x, 0.3, &mut y),
-        4 => {
-            y.copy_from_slice(&x);
-            l2::trmv(N, am, cs, false, false, &mut y);
-        }
-        5 => {
-            y.copy_from_slice(&x);
-            l2::trsv(N, am, cs, false, false, &mut y);
-        }
-        6 => l2::syr(0.7, N, am, cs, true, &x),
-        7 => l2::syr2(0.7, N, am, cs, true, &x, &x),
-        _ => return f64::NAN,
-    }
-    let a_probe = unsafe { core::slice::from_raw_parts(a.as_ref().as_ptr(), N) };
-    l1::asum(&y) + y[0] + y[N - 1] + l1::asum(a_probe)
-}
-
-/// Level-3 roofline rows over the persistent state. op: 0 gemm,
-/// 1 symm_left, 2 syrk, 3 syr2k, 4 trmm_left, 5 trsm_left,
-/// 6 trmm_right, 7 trsm_right. The in-place triangular ops re-copy B
-/// fresh from `b` each call (an O(n²) copy against O(n³) work), so
-/// values never grow across iterations; accumulating ops use small
-/// alpha with beta = 0.5. `sym` is the sacrificial destination
-/// (already true for the triad probe); `tri` (dominant diagonal) keeps
-/// the solves bounded.
-#[no_mangle]
-pub extern "C" fn run_l3_layer(op: usize) -> f64 {
-    use faer_wasm_blas::level1 as l1;
-    use faer_wasm_blas::level3 as l3;
-    let s = state_mut();
-    let n = s.a.nrows();
-    let acs = s.a.as_ref().col_stride() as usize;
-    let bcs = s.b.as_ref().col_stride() as usize;
-    let scs = s.sym.as_ref().col_stride() as usize;
-    let tcs = s.tri.as_ref().col_stride() as usize;
-    let len = |cs: usize| if n == 0 { 0 } else { cs * (n - 1) + n };
-    let a = unsafe { core::slice::from_raw_parts(s.a.as_ref().as_ptr(), len(acs)) };
-    let b = unsafe { core::slice::from_raw_parts(s.b.as_ref().as_ptr(), len(bcs)) };
-    let tri = unsafe { core::slice::from_raw_parts(s.tri.as_ref().as_ptr(), len(tcs)) };
-    let sym = unsafe { core::slice::from_raw_parts_mut(s.sym.as_mut().as_ptr_mut(), len(scs)) };
-    let refresh = |dst: &mut [f64]| {
-        for j in 0..n {
-            l1::copy(&b[j * bcs..j * bcs + n], &mut dst[j * scs..j * scs + n]);
-        }
-    };
-    match op {
-        0 => l3::gemm(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs),
-        1 => l3::symm_left(0.001, n, n, tri, tcs, true, b, bcs, 0.5, sym, scs),
-        2 => l3::syrk(0.001, n, n, a, acs, 0.5, sym, scs, true),
-        3 => l3::syr2k(0.001, n, n, a, acs, b, bcs, 0.5, sym, scs, true),
-        4 => {
-            refresh(sym);
-            l3::trmm_left(1.0, n, n, tri, tcs, false, false, sym, scs);
-        }
-        5 => {
-            refresh(sym);
-            l3::trsm_left(1.0, n, n, tri, tcs, false, false, sym, scs);
-        }
-        6 => {
-            refresh(sym);
-            l3::trmm_right(1.0, n, n, tri, tcs, true, false, sym, scs);
-        }
-        7 => {
-            refresh(sym);
-            l3::trsm_right(1.0, n, n, tri, tcs, true, false, sym, scs);
-        }
-        _ => return f64::NAN,
-    }
-    sym[0] + sym[len(scs) - 1]
-}
-
-/// Tuning-campaign candidate row: the 4×4 register-tiled gemm on the
-/// same state/constants as run_l3_layer(0) — bit-identical output,
-/// raced for speed only.
-#[no_mangle]
-pub extern "C" fn run_l3_tuned_gemm() -> f64 {
-    use faer_wasm_blas::level3 as l3;
-    let s = state_mut();
-    let n = s.a.nrows();
-    let acs = s.a.as_ref().col_stride() as usize;
-    let bcs = s.b.as_ref().col_stride() as usize;
-    let scs = s.sym.as_ref().col_stride() as usize;
-    let len = |cs: usize| if n == 0 { 0 } else { cs * (n - 1) + n };
-    let a = unsafe { core::slice::from_raw_parts(s.a.as_ref().as_ptr(), len(acs)) };
-    let b = unsafe { core::slice::from_raw_parts(s.b.as_ref().as_ptr(), len(bcs)) };
-    let sym = unsafe { core::slice::from_raw_parts_mut(s.sym.as_mut().as_ptr_mut(), len(scs)) };
-    l3::gemm_tiled(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs);
-    sym[0] + sym[len(scs) - 1]
-}
-
-/// Same, for the 4-column fused candidate.
-#[no_mangle]
-pub extern "C" fn run_l3_col4_gemm() -> f64 {
-    use faer_wasm_blas::level3 as l3;
-    let s = state_mut();
-    let n = s.a.nrows();
-    let acs = s.a.as_ref().col_stride() as usize;
-    let bcs = s.b.as_ref().col_stride() as usize;
-    let scs = s.sym.as_ref().col_stride() as usize;
-    let len = |cs: usize| if n == 0 { 0 } else { cs * (n - 1) + n };
-    let a = unsafe { core::slice::from_raw_parts(s.a.as_ref().as_ptr(), len(acs)) };
-    let b = unsafe { core::slice::from_raw_parts(s.b.as_ref().as_ptr(), len(bcs)) };
-    let sym = unsafe { core::slice::from_raw_parts_mut(s.sym.as_mut().as_ptr_mut(), len(scs)) };
-    l3::gemm_col4(0.001, n, n, n, a, acs, b, bcs, 0.5, sym, scs);
-    sym[0] + sym[len(scs) - 1]
-}
-
-/// Level-3 cross-target determinism probes: fixed LCG-filled 65×65
-/// matrices (odd — tails everywhere), one op each, folded column-wise
-/// with the layer's own asum. op order matches run_l3_layer plus
-/// symm_right at 8.
-#[no_mangle]
-pub extern "C" fn run_l3_probe(op: usize) -> f64 {
-    use faer_wasm_blas::level1 as l1;
-    use faer_wasm_blas::level3 as l3;
-    const N: usize = 65;
-    const K: usize = 33;
-    let mut st = 11u64;
-    let mut next = || {
-        st = st
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        ((st >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0
-    };
-    let mut a = Mat::from_fn(N, N, |_, _| next());
-    for i in 0..N {
-        a[(i, i)] = 2.0 * N as f64 + 1.0;
-    }
-    let b = Mat::from_fn(N, N, |_, _| next());
-    let mut c = Mat::from_fn(N, N, |_, _| next());
-    let (acs, bcs, ccs) = (
-        a.as_ref().col_stride() as usize,
-        b.as_ref().col_stride() as usize,
-        c.as_ref().col_stride() as usize,
-    );
-    let len = |cs: usize| cs * (N - 1) + N;
-    let av = unsafe { core::slice::from_raw_parts(a.as_ref().as_ptr(), len(acs)) };
-    let bv = unsafe { core::slice::from_raw_parts(b.as_ref().as_ptr(), len(bcs)) };
-    let cv = unsafe { core::slice::from_raw_parts_mut(c.as_mut().as_ptr_mut(), len(ccs)) };
-    match op {
-        0 => l3::gemm(0.7, N, K, N, av, acs, bv, bcs, 0.3, cv, ccs),
-        1 => l3::symm_left(0.7, N, N, av, acs, true, bv, bcs, 0.3, cv, ccs),
-        2 => l3::syrk(0.7, N, K, av, acs, 0.3, cv, ccs, true),
-        3 => l3::syr2k(0.7, N, K, av, acs, bv, bcs, 0.3, cv, ccs, true),
-        4 => l3::trmm_left(0.7, N, N, av, acs, false, false, cv, ccs),
-        5 => l3::trsm_left(0.7, N, N, av, acs, false, false, cv, ccs),
-        6 => l3::trmm_right(0.7, N, N, av, acs, true, false, cv, ccs),
-        7 => l3::trsm_right(0.7, N, N, av, acs, true, false, cv, ccs),
-        8 => l3::symm_right(0.7, N, N, av, acs, true, bv, bcs, 0.3, cv, ccs),
-        _ => return f64::NAN,
-    }
-    let mut fold = 0.0;
-    for j in 0..N {
-        fold += l1::asum(&cv[j * ccs..j * ccs + N]);
-    }
-    fold + cv[0] + cv[len(ccs) - 1]
-}
-
-/// Cross-target determinism probe: fixed LCG data (len 1001 — odd, so the
-/// scalar tail runs too), one reduction per op. Native bin and wasm build
-/// must return identical bits (the lane-emulation construction in
-/// blas/src/lanes.rs). op: 0 dot, 1 asum, 2 nrm2, 3 iamax.
-#[no_mangle]
-pub extern "C" fn run_l1_probe(op: usize) -> f64 {
-    use faer_wasm_blas::level1 as l1;
-    const LEN: usize = 1001;
-    let mut x = [0.0f64; LEN];
-    let mut y = [0.0f64; LEN];
-    let mut s = 42u64;
-    let mut next = || {
-        s = s
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        ((s >> 11) as f64 / (1u64 << 53) as f64) * 2.0 - 1.0
-    };
-    for v in x.iter_mut() {
-        *v = next();
-    }
-    for v in y.iter_mut() {
-        *v = next();
-    }
-    match op {
-        0 => l1::dot(&x, &y),
-        1 => l1::asum(&x),
-        2 => l1::nrm2(&x),
-        3 => l1::iamax(&x) as f64,
-        _ => f64::NAN,
-    }
-}
 
 unsafe fn l1_swap_plain(x: *mut f64, y: *mut f64, len: usize) {
     for i in 0..len {
@@ -1936,6 +1647,12 @@ unsafe fn ceiling_flops_imp(iters: usize) -> f64 {
     s
 }
 
+
+// The BLAS-layer rows, determinism probes, and their f32 twins moved
+// to blas/bench (blas-bench crate, 2026-07-19) — the layer measures
+// itself; this harness keeps only the faer-dependent benches (and
+// run_ceiling_bw/run_ceiling_flops for the legacy ceilings.mjs).
+// gemm-tune-ab.mjs loads both wasm modules for the faer race.
 
 #[cfg(target_arch = "wasm32")]
 mod wasm_shim {

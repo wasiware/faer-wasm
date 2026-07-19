@@ -54,9 +54,56 @@ clones inherit tuned shapes for free instead of re-tuning ×3):
    bit-identity guarantee; step-1 evidence says they'd help
    trmm/trsm/gemv and hurt syrk;
 3. **the other number types** — the tuned layer cloned into f32 and
-   c64 (c32: decide when reached — nothing has ever shipped c32);
+   c64 (c32: decide when reached — nothing has ever shipped c32).
+   f32: DONE 2026-07-19, two runner draws (the s-routines, 23 routines,
+   30 mirrored tests, 21 probes bit-identical both draws, rooflines +
+   dispatch race — docs step 10: peak ~1.8× f64, L3 at the same
+   fractions of it; deliberate deviations from a verbatim clone: 8×4
+   gemm tile, 3 MB dispatch threshold at the runner-raced f32
+   crossover. Recorded, not chased: f32 iamax at ~8% of ceiling —
+   the scalar index rescan is per-element and dominates).
+   c64: BUILT 2026-07-19, two runner draws (the z-routines, the
+   first non-mechanical clone: 26 routines / 31 operations — dot and
+   ger split u/c, zdscal, gemv_c, the Hermitian family; own `C64`
+   scalar with a fixed rounding order, one complex per F64x2
+   register via a sign-folded two-multiply product that is bit-exact
+   to the scalar order; six L1 routines delegate to the tuned
+   d-streams over the 2n-real view; 40 new tests — 104 crate-wide;
+   24 probes bit-identical native ↔ wasm on container + both draws).
+   Rooflines: L3 at 74–86% of the f64 arithmetic peak — complex does
+   4× the FLOPs per byte, so the fan-out shapes run compute-bound;
+   zgemm 74–79% with no register tile. Recorded c64 tuning levers,
+   not chased: single-column fused zhemv reads 19–21% of the memory
+   ceiling and hemm_left (riding it) 39–41% — the 4-column fused
+   grouping is the obvious first candidate; a complex register-tile
+   zgemm is a design, not a port. Not built (no consumer): complex-
+   symmetric zsymm/zsyrk/zsyr2k, complex-s rotation zrot.
+   c32: DONE 2026-07-19 (Andy: "C32"), two runner draws — the c64
+   layer at a new lane geometry (TWO complexes per F32x4 register,
+   pair-wise shuffles, one-complex scalar tails, all bit-identical
+   by the same sign-folding proof); 26 routines / 31 operations, 40
+   new tests (144 crate-wide), 24 probes bit-identical on container
+   + both draws; L3 at 75–87% of the f32 arithmetic peak — cgemm 85%
+   of ~30.5 GFLOP/s, the fastest absolute row on the board; same
+   recorded levers (chemv fused grouping — 12% without it; icamax
+   rescan 13–16%). THE FOUR-TYPE GRID IS COMPLETE.
+   Close-out (2026-07-19, Andy's four-question checklist — docs step
+   13): code sweep (clippy clean; dead harness field removed), doc/
+   comment staleness sweep, organization consolidation (naming →
+   src/README, contract → tests/README, blas/README dieted). The
+   hemv grouping lever RACED with a split verdict — WON for c64
+   (~13%, ships; hemm_left 39–41% → 54–61% of peak) and REFUTED for
+   c32 (~2% slower both draws; recorded in chemv.rs — third
+   container-vs-runner reversal). Market races completed for the
+   complex types: zgemm 1.49–1.71× over faer's blocked gemm (n≥256,
+   both draws; tie at 128), cgemm 3.11–3.67× unanimous. Remaining
+   levers recorded, not chased: complex register tiles (thin
+   headroom at 74–94% of peak), i*amax rescans;
 4. **only then** does any LAPACK-layer work resume (the kernel
-   re-route onto the layer included).
+   re-route onto the layer included) — UNBLOCKED as of 2026-07-19:
+   all four number types are built, tested, probed, and
+   runner-scored; what remains inside the BLAS layer is recorded
+   tuning levers and consumer-driven gaps, not coverage.
 
 ## Re-derived goals (architect session, 2026-07-18)
 
