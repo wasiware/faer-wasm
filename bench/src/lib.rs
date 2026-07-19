@@ -17,9 +17,6 @@ struct State {
     a: Mat<f64>,
     b: Mat<f64>,
     sym: Mat<f64>,
-    // a's values with a dominant diagonal: triangular solves/multiplies
-    // stay bounded across repeated bench iterations
-    tri: Mat<f64>,
     rhs: Mat<f64>,
     ac: Mat<faer::c64>,
     bc: Mat<faer::c64>,
@@ -61,10 +58,6 @@ pub extern "C" fn setup(n: usize) {
     for i in 0..n {
         sym[(i, i)] += 2.0 * n as f64;
     }
-    let mut tri = a.to_owned();
-    for i in 0..n {
-        tri[(i, i)] = 2.0 * n as f64 + 1.0;
-    }
     let rhs = fill(n, 1, 0x853C49E6748FEA9B);
     // c64 twins of a/b/rhs for the complex ops
     let re = fill(n, n, 0x2545F4914F6CDD1D);
@@ -83,7 +76,7 @@ pub extern "C" fn setup(n: usize) {
     let bc32 = Mat::from_fn(n, n, |i, j| faer::c32::new(bc[(i, j)].re as f32, bc[(i, j)].im as f32));
     unsafe {
         *STATE.0.get() =
-            Some(State { a, b, sym, tri, rhs, ac, bc, rhsc, a32, b32, rhs32, ac32, bc32 })
+            Some(State { a, b, sym, rhs, ac, bc, rhsc, a32, b32, rhs32, ac32, bc32 })
     }
 }
 

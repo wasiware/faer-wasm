@@ -88,8 +88,11 @@ evidence log: docs/blas-ab-2026-07.md steps 1–6. Scoreboard: STATUS §3.
   --f32 switches type) over the blas-bench wasm. bench/gemm-tune-ab.mjs
   (4-way faer race) takes TWO wasm paths since the restructure. Old
   race harnesses (run_blas_ab, run_l1_ab) still exported from
-  bench-harness — run_blas_ab(4,0) = faer gemm reference. The layer
-  rows/probes/ceilings themselves live in blas/bench/src/lib.rs.
+  bench-harness — run_blas_ab(4,0) = faer gemm reference;
+  run_gemm_faer_cplx(0|1) = faer c64/c32 blocked gemm for the complex
+  market race (bench/cplx-gemm-ab.mjs, two-module like gemm-tune-ab).
+  The layer rows/probes/ceilings themselves live in
+  blas/bench/src/lib.rs.
 
 ## Tuning campaign state (task #22 — CLOSED 2026-07-19)
 Six levers shipped, every verdict two runner draws (docs steps 6–9):

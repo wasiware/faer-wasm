@@ -2,20 +2,23 @@
 //! with only one triangle stored (A[j,i] = conj(A[i,j]); diagonal
 //! imaginary parts are ignored, per the LAPACK storage convention).
 //!
-//! Implementation: fused column pass — one stream over the stored
-//! strict segment serves both triangles' contributions
-//! (`kernels::zaxpy_dotc`: y[i] += t·a[i] elementwise while
-//! acc += conj(a[i])·x[i] reduces), the complex twin of the `dsymv`
-//! fused shape at single-column width. The diagonal contributes
-//! t·re(a[j,j]) (real by convention). Accumulation order is the fused
-//! pass's own — zhemv is bounds-tested, not bit-locked; cross-target
-//! determinism holds through the lane emulation as everywhere else.
-//! The 4-column fused grouping that pushed `dsymv` to 2× is a
-//! recorded tuning lever, not yet built for c64.
+//! Implementation: 4-column grouped fused pass (close-out race,
+//! 2026-07-19) — four stored columns share ONE stream over x and y
+//! (`kernels::zaxpy_dotc4`: y[i] += Σᵤ tᵤ·aᵤ[i] while each
+//! accᵤ += conj(aᵤ[i])·x[i]), the dsymv grouping at complex lane
+//! geometry; tail columns use the single-column fused pass
+//! (`kernels::zaxpy_dotc`). Raced against the single-column shape on
+//! both reference draws and WON (3.19–3.45 vs 3.58–3.92 ms at
+//! n=2048, ~9–13%) — the same lever LOST for c32 (see `chemv`), so
+//! each type ships its own winner. The diagonal contributes
+//! t·re(a[j,j]) (real by convention). Accumulation order is the
+//! grouped pass's own — zhemv is bounds-tested, not bit-locked;
+//! cross-target determinism holds through the lane emulation as
+//! everywhere else.
 
 use super::{check_mat, zscale_y};
 use crate::c64::C64;
-use crate::kernels::zaxpy_dotc;
+use crate::kernels::{zaxpy_dotc, zaxpy_dotc4};
 
 /// y ← αAx + βy, A Hermitian n×n at column stride `cs`, with the
 /// `upper` (or lower) triangle stored.
@@ -30,49 +33,6 @@ pub fn zhemv(
 	beta: C64,
 	y: &mut [C64],
 ) {
-	check_mat(a.len(), n, n, cs);
-	assert_eq!(x.len(), n, "zhemv: x length mismatch");
-	assert_eq!(y.len(), n, "zhemv: y length mismatch");
-	zscale_y(beta, y);
-	for j in 0..n {
-		let cj = j * cs;
-		let t = alpha * x[j];
-		let d = if upper {
-			unsafe { zaxpy_dotc(a.as_ptr().add(cj), t, x.as_ptr(), y.as_mut_ptr(), j) }
-		} else {
-			unsafe {
-				zaxpy_dotc(
-					a.as_ptr().add(cj + j + 1),
-					t,
-					x.as_ptr().add(j + 1),
-					y.as_mut_ptr().add(j + 1),
-					n - j - 1,
-				)
-			}
-		};
-		y[j] = y[j] + t.scale(a[cj + j].re) + alpha * d;
-	}
-}
-
-/// 4-column grouped fused variant (close-out race candidate,
-/// 2026-07-19): the dsymv grouping at complex lane geometry — four
-/// stored columns share ONE stream over x and y
-/// (`kernels::zaxpy_dotc4`), where the shipped shape streams x and y
-/// once per column. Same bounds-tested contract as `zhemv` (the
-/// grouping re-folds the reduction); raced against `zhemv` on the
-/// reference runners before either ships as the default.
-#[allow(clippy::too_many_arguments)]
-pub fn zhemv_grouped(
-	alpha: C64,
-	n: usize,
-	a: &[C64],
-	cs: usize,
-	upper: bool,
-	x: &[C64],
-	beta: C64,
-	y: &mut [C64],
-) {
-	use crate::kernels::zaxpy_dotc4;
 	check_mat(a.len(), n, n, cs);
 	assert_eq!(x.len(), n, "zhemv: x length mismatch");
 	assert_eq!(y.len(), n, "zhemv: y length mismatch");
@@ -122,10 +82,10 @@ pub fn zhemv_grouped(
 		let cj = j * cs;
 		let t = alpha * x[j];
 		let d = if upper {
-			unsafe { crate::kernels::zaxpy_dotc(a.as_ptr().add(cj), t, x.as_ptr(), y.as_mut_ptr(), j) }
+			unsafe { zaxpy_dotc(a.as_ptr().add(cj), t, x.as_ptr(), y.as_mut_ptr(), j) }
 		} else {
 			unsafe {
-				crate::kernels::zaxpy_dotc(
+				zaxpy_dotc(
 					a.as_ptr().add(cj + j + 1),
 					t,
 					x.as_ptr().add(j + 1),

@@ -41,9 +41,6 @@ fn zhemv_bounded_both_triangles() {
 			let beta = C64::new(0.4, -0.1);
 			let mut y = y0.clone();
 			zhemv(alpha, n, &a, cs, upper, &x, beta, &mut y);
-			// grouped candidate: same contract, same bounds
-			let mut yg = y0.clone();
-			zhemv_grouped(alpha, n, &a, cs, upper, &x, beta, &mut yg);
 			for i in 0..n {
 				let want = alpha * comp_sum_c((0..n).map(|j| full[j * n + i] * x[j]))
 					+ beta * y0[i];
@@ -54,10 +51,6 @@ fn zhemv_bounded_both_triangles() {
 				assert!(
 					(y[i].re - want.re).abs() + (y[i].im - want.im).abs() <= tol,
 					"zhemv upper={upper} n={n} i={i}"
-				);
-				assert!(
-					(yg[i].re - want.re).abs() + (yg[i].im - want.im).abs() <= tol,
-					"zhemv_grouped upper={upper} n={n} i={i}"
 				);
 			}
 		}
