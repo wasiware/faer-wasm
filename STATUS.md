@@ -104,6 +104,29 @@ re-derivation of the project goals. The decisions, in plain terms:
   weak spot recorded: f32 find-largest-element sits at ~8% of the
   memory limit because its element-by-element index scan doesn't get
   faster with narrower numbers — a known lever for a later pass.
+- **The c64 BLAS layer is built** (2026-07-19): the complex
+  double-precision routines — the first clone that took real design
+  work rather than a find-and-replace, because complex arithmetic
+  has no ready-made SIMD operations. The complex multiply was built
+  from lane shuffles in a way that is provably bit-identical to the
+  plain formula, so the whole testing regime carried over: 40 new
+  tests (104 total in the layer, all green), and all 24 new
+  cross-target checks produce identical bits on native and wasm, on
+  the container and both CI machines. A third of the vector-level
+  routines turned out to BE the f64 routines in disguise (a real
+  scale/copy/swap/rotation of complex data is the real operation on
+  twice the numbers) — those are one-line delegations that inherit
+  the tuned speed for free and measure at 97–100% of the machine's
+  limit. The headline: the complex matrix–matrix family runs at
+  **74–86% of the machine's arithmetic limit** — better fractions
+  than the real layers (46–56%) — because complex math does four
+  times the arithmetic per byte of memory moved, which is exactly
+  the regime our streaming shapes like. Two honest weak rows, both
+  tied to one recorded lever (the fused symmetric-multiply grouping
+  wasn't ported yet): the Hermitian matrix×vector at ~20% and the
+  matrix–matrix op built on it at ~40%. Not built (nothing needs
+  them yet): the complex-symmetric (non-Hermitian) variants, the
+  complex-sine rotation apply, and all of c32.
 - **The f64 tuning pass is DONE — campaign closed 2026-07-19**:
   before cloning the layer into the other number types, the f64
   loops were made fast (Andy's revised sequencing — the clones

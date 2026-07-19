@@ -14,14 +14,15 @@ tables in the crate README:
 |---|---|---|
 | `d` | f64 (double) | `daxpy`, `dgemm` |
 | `s` | f32 (single) | `saxpy`, `sgemm` |
-| `z` | c64 (double complex) | `zaxpy`, `zgemm` — next campaign |
+| `z` | c64 (double complex) | `zaxpy`, `zgemm` — built 2026-07-19 |
 | `c` | c32 (single complex) | `caxpy` — undecided, never shipped |
 
 The index routines put `i` first and the type second: `idamax` /
-`isamax` (index of the largest |element|, f64 / f32). When the
-complex layer lands, the handful of complex routines that return a
-real carry both letters, exactly as reference BLAS spells them:
-`dznrm2`, `dzasum`, `izamax`.
+`isamax` / `izamax` (index of the largest element — |x| for real,
+|re|+|im| for complex). The complex routines that return a real carry
+both letters, exactly as reference BLAS spells them: `dznrm2`,
+`dzasum`; and the real-scalar/real-rotation forms keep reference
+names too: `zdscal` (real α), `zdrot` (real c, s).
 
 ## Where we deviate from reference BLAS — deliberately, per routine
 
@@ -29,16 +30,18 @@ The names are netlib's; the signatures are ours (documented per file):
 
 - **No trans/side/uplo character arguments.** Variants that reference
   BLAS folds into flag parameters are separate functions:
-  `dgemv`/`dgemv_t`, `dsymm_left`/`dsymm_right`,
-  `dtrmm_left`/`dtrmm_right`, `dtrsm_left`/`dtrsm_right`. Triangle
-  and unit-diagonal selection stay as `bool` parameters where the
-  loop structure is shared (`upper`, `unit`).
+  `dgemv`/`dgemv_t` (plus `zgemv_c` for the conjugate transpose),
+  `dsymm_left`/`dsymm_right`, `dtrmm_left`/`dtrmm_right`,
+  `dtrsm_left`/`dtrsm_right` (and their z twins). Triangle and
+  unit-diagonal selection stay as `bool` parameters where the loop
+  structure is shared (`upper`, `unit`).
 - **Unit stride only.** Callers pass contiguous column slices with a
   column stride per matrix — no `incx`/`incy` (strided access defeats
   streaming and no consumer wants it).
 - **`drotg`/`srotg` return a `Givens` struct** (c, s, r) instead of
   writing through pointers, and omit the classic `z` reconstruction
-  output — no consumer wants it.
+  output — no consumer wants it. `zrotg` likewise returns a `ZGivens`
+  (real c, complex s, complex r).
 - **Tuned-variant exports.** Where a routine ships raced alternates,
   they carry a suffix: `dgemm_colaxpy` (the plain reference shape),
   `dgemm_tiled`, `dgemm_col4` — `dgemm` itself is the size dispatcher.

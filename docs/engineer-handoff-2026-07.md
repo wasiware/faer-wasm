@@ -23,10 +23,12 @@ evidence log: docs/blas-ab-2026-07.md steps 1–6. Scoreboard: STATUS §3.
    blas/bench (own wasm, builds in seconds): execSync
    `cd ../blas/bench && cargo build --release --target
    wasm32-unknown-unknown --lib`, then per level `cargo run --release
-   --bin native lN-bits[-f32] > /tmp/bits` and `node lN-roofline.mjs
-   target/.../blas_bench.wasm /tmp/bits [--f32]` (cwd blas/bench),
-   then `process.exit(0)`. Commit as "TEMPORARY: ... (revert after
-   draws)".
+   --bin native lN-bits[-f32|-z] > /tmp/bits` and `node
+   lN-roofline.mjs target/.../blas_bench.wasm /tmp/bits
+   [--f32|--c64]` (cwd blas/bench), then `process.exit(0)`. Commit as
+   "TEMPORARY: ... (revert after draws)". NOTE: the implementation
+   being measured must ALSO be committed/pushed before dispatch —
+   the runner clones the branch head.
 2. Dispatch 2× `actions_run_trigger` on `pyodide-bench.yml`, ref the
    branch. `git revert --no-edit <routing-sha>` immediately (queued
    runs keep their head SHA).
@@ -70,6 +72,13 @@ evidence log: docs/blas-ab-2026-07.md steps 1–6. Scoreboard: STATUS §3.
   run_l3_layer(0..7: gemm,symm_l,syrk,syr2k,trmm_l,trsm_l,trmm_r,
   trsm_r), run_l3_tuned_gemm (tiled), run_l3_col4_gemm, probes as
   above, run_ceiling_bw (pure triad v2), run_ceiling_flops(iters).
+  c64 twins (state az/bz/symz/triz/rhsz): run_l1_layer_z(0..10:
+  copy,swap,scal,dscal,axpy,rot,dotu,dotc,nrm2,asum,iamax),
+  run_l2_layer_z(0..9: gemv,gemv_t,gemv_c,geru,gerc,hemv,trmv,trsv,
+  her,her2), run_l3_layer_z(0..7: gemm,hemm_l,herk,her2k,trmm_l,
+  trsm_l,trmm_r,trsm_r), probes run_l{1,2,3}_probe_z (5/10/9, native
+  modes l{1,2,3}-bits-z); c64 L3 scores against the F64 flops
+  ceiling with 4x FLOP accounting (complex MAC = 8 real FLOPs).
 - Scripts: blas/bench/l{1,2,3}-roofline.mjs (L1/L2 GB/s vs fastest
   same-run stream at n=2048; L3 GFLOP/s vs arithmetic peak at n=512;
   --f32 switches type) over the blas-bench wasm. bench/gemm-tune-ab.mjs

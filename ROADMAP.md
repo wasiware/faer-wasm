@@ -61,7 +61,24 @@ clones inherit tuned shapes for free instead of re-tuning ×3):
    fractions of it; deliberate deviations from a verbatim clone: 8×4
    gemm tile, 3 MB dispatch threshold at the runner-raced f32
    crossover. Recorded, not chased: f32 iamax at ~8% of ceiling —
-   the scalar index rescan is per-element and dominates). c64 next;
+   the scalar index rescan is per-element and dominates).
+   c64: BUILT 2026-07-19, two runner draws (the z-routines, the
+   first non-mechanical clone: 26 routines / 31 operations — dot and
+   ger split u/c, zdscal, gemv_c, the Hermitian family; own `C64`
+   scalar with a fixed rounding order, one complex per F64x2
+   register via a sign-folded two-multiply product that is bit-exact
+   to the scalar order; six L1 routines delegate to the tuned
+   d-streams over the 2n-real view; 40 new tests — 104 crate-wide;
+   24 probes bit-identical native ↔ wasm on container + both draws).
+   Rooflines: L3 at 74–86% of the f64 arithmetic peak — complex does
+   4× the FLOPs per byte, so the fan-out shapes run compute-bound;
+   zgemm 74–79% with no register tile. Recorded c64 tuning levers,
+   not chased: single-column fused zhemv reads 19–21% of the memory
+   ceiling and hemm_left (riding it) 39–41% — the 4-column fused
+   grouping is the obvious first candidate; a complex register-tile
+   zgemm is a design, not a port. Not built (no consumer): complex-
+   symmetric zsymm/zsyrk/zsyr2k, complex-s rotation zrot, c32
+   (architect decision when reached);
 4. **only then** does any LAPACK-layer work resume (the kernel
    re-route onto the layer included).
 

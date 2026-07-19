@@ -4,7 +4,7 @@ One test file per BLAS routine, mirroring `../src/` (naming:
 `../src/L1/README.md`); `main.rs` per level folder is the Cargo test
 target, `common.rs` holds the shared generator and the
 higher-precision reference summers. Run with
-`cd blas && cargo test --release` — **64 tests, all green**.
+`cd blas && cargo test --release` — **104 tests, all green**.
 Benchmarks live in `../bench/README.md`; this page is the
 correctness half of the contract.
 
@@ -27,16 +27,28 @@ identically; the f32 bounds use an f64-accumulated reference
 | gemm, syrk, syr2k | **bit-for-bit replay** + bounds; gemm's three shapes (colaxpy / tile / col4) cross-checked bit-identical, so the size dispatch is invisible |
 | symm | left: bounds (rides symv); right: **bit-for-bit replay** |
 | trmm, trsm | **bit-for-bit replay** both sides + bounds/residuals — the two elimination-order reorders (trmm_right-upper, trsm_right-lower) are documented in their files and the replays mirror them; the other triangles replay the PLAIN order, proving the blocked shapes bit-identical to it |
+| zaxpy, zscal, zdscal, zcopy, zswap, zdrot | **bit-for-bit** vs the scalar `C64` definition (the SIMD product form is a bit-exact rewrite of it) |
+| zdotu, zdotc | error-bounded vs a component-wise compensated reference; plus `zdotc(x,y) == zdotu(conj x, y)` **bitwise** (the conjugation folds into lane signs exactly) |
+| dznrm2, dzasum | error-bounded (delegations to the d-streams; nrm2 guard cases at 1e±300) |
+| izamax | **exact index** on \|re\|+\|im\|, incl. first-occurrence ties |
+| zrotg | defining identities (c²+\|s\|²=1, c·a+s·b=r, −conj(s)a+cb=0) + a=0 reference case + 1e±150/±300 extremes |
+| zgemv, zgeru, zgerc, ztrmv, ztrsv | **bit-for-bit same-order replay** (+ bounds; ztrsv residual-verified; `zgerc == zgeru(conj y)` and `zgemv_c == zgemv_t(conj A)` bitwise) |
+| zhemv | error-bounded (fused pass re-folds its reduction); stored diagonal imag poisoned to prove it is ignored |
+| zher, zher2 | **bit-for-bit replay** + diagonal ends exactly real (+0.0 imag, the Hermitian invariant) |
+| zgemm | **bit-for-bit replay** + bounds; col4 vs colaxpy cross-checked bit-identical |
+| zhemm | left: bounds (rides zhemv); right: **bit-for-bit replay** through the conjugating triangle lookup |
+| zherk, zher2k | **bit-for-bit replay** incl. the real-β component scale and the exactly-real diagonals |
+| ztrmm, ztrsm | **bit-for-bit replay** both sides — same reorder disclosures as the real twins, replays mirror them; residuals for ztrsm |
 
 ## Cross-target bit-identity — the results
 
 The standing guarantee: our code produces **identical bits on native
 x86-64 and wasm**, by construction (`../src/lanes.rs` emulates the
 SIMD lane structure elementwise off-wasm, and every reduction folds
-its lanes in a fixed order). It is verified by 42 determinism probes
-— fixed-LCG inputs at odd sizes so every tail path runs, folded to
-one f64 — checked on every roofline run and on every reference-runner
-draw to date, **all green on every check**.
+its lanes in a fixed order). It is verified by 66 determinism probes
+(21 f64 + 21 f32 + 24 c64) — fixed-LCG inputs at odd sizes so every
+tail path runs, folded to one f64 — checked on every roofline run and
+on every reference-runner draw to date, **all green on every check**.
 
 The expected patterns (a probe value changes ONLY when an
 accumulation order is changed deliberately, like the symv fold — any
@@ -66,8 +78,38 @@ other change is a bug, not noise):
 | L3 trsm_right | `402684638bea76a3` | `4026846380000000` |
 | L3 symm_right | `4107947163c33400` | `4107947140000000` |
 
+The c64 probes (own recipes — complex LCG fills, re then im per
+element; complex results folded re+im):
+
+| probe | c64 |
+|---|---|
+| L1 dotu | `402f2dabc8e0c875` |
+| L1 dotc | `4042707060b9a365` |
+| L1 nrm2 | `4039ce75f2de1fe4` |
+| L1 asum | `408f4c94a86377f2` |
+| L1 iamax | `4089000000000000` |
+| L2 gemv | `40f7e63e951acc6e` |
+| L2 gemv_t | `40f7de90e5b397ac` |
+| L2 gemv_c | `40f7e72beb9aec3f` |
+| L2 geru | `408fdda2c5491a74` |
+| L2 gerc | `409018a0216915e3` |
+| L2 hemv | `40f7e48bc69067de` |
+| L2 trmv | `41008f303154958a` |
+| L2 trsv | `408829ab1fd32186` |
+| L2 her | `408fc76ecf538996` |
+| L2 her2 | `408fc865db34fae8` |
+| L3 gemm | `4109aa6e73e67844` |
+| L3 hemm_left | `411857ff7cf3aaf2` |
+| L3 herk | `412187c69051502d` |
+| L3 her2k | `41059e3d2efffd35` |
+| L3 trmm_left | `4118462c24e53161` |
+| L3 trsm_left | `40372c057aec4588` |
+| L3 trmm_right | `411847a9ff1fcb03` |
+| L3 trsm_right | `40372a3fb5d5004e` |
+| L3 hemm_right | `41185b38c1688ef6` |
+
 Regenerate/verify: `cd ../bench && cargo run --release --bin native
-l{1,2,3}-bits[-f32]` for the native side; the roofline scripts
+l{1,2,3}-bits[-f32|-z]` for the native side; the roofline scripts
 compare the wasm build against a bits file and abort on any mismatch.
 These values have been continuous through the tuning campaign's
 bit-preserving levers and the 2026-07-19 restructures (verified at
