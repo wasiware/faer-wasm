@@ -57,7 +57,9 @@ evidence log: docs/blas-ab-2026-07.md steps 1–6. Scoreboard: STATUS §3.
   routine per type (daxpy.rs/saxpy.rs...) under src/L{1,2,3}; tuned
   kernels (d/saxpy4, d/saxpy4in, d/saxpy_dot(4)) in src/kernels.rs;
   tests mirror it under tests/L{1,2,3}/ with main.rs+common.rs per
-  level; the live scoreboard is blas/tests/README.md.
+  level; the live scoreboard is blas/bench/README.md; the
+  bit-identity results and expected probe patterns are
+  blas/tests/README.md.
 
 ## bench harness map (bench/ = faer side; blas/bench = blas side)
 - State: a, b (inputs), sym (SACRIFICIAL — triad destination and L2/L3

@@ -92,7 +92,7 @@ ROADMAP "Re-derived goals".
 - `blas/` — **`faer-wasm-blas`**, the wasm-native BLAS layer (the
   foundation the LAPACK-layer kernels re-route onto): one file per
   routine per type in netlib naming, f64 + f32 complete and tuned,
-  self-measuring (`blas/bench/`), scoreboard in `blas/tests/README.md`,
+  self-measuring (`blas/bench/`, scoreboard in its README),
   plan of record in `blas/README.md`.
 - `bench/` + `docs/benchmarks-2026-07.md` — the wasm-vs-native benchmark
   harness (f64 + c64 ops) and its first published numbers (opt-level

@@ -2,120 +2,98 @@
 
 One file per BLAS routine per type, netlib naming (convention:
 `L1/README.md`). The layer is a strict one-way composition — every
-edge below points from caller to callee; there are no cycles and no
-sideways calls within a level. The map shows the f64 routines; every
-s-routine mirrors its d-twin's edges exactly (onto the s-kernels and
-`F32x4`).
+edge points from caller to callee; no cycles, no sideways calls
+within a level.
+
+**One node = one routine family, both types.** The f64 (d-) and f32
+(s-) routines have identical edge sets by construction — same files,
+same calls, with the s-side running on the s-kernels and `F32x4` —
+so the map treats them as one. (If a future type ever deviates
+structurally, it gets its own edges here.)
 
 ```mermaid
 graph TD
   subgraph L3
-    dgemm["dgemm (dispatch)"]
-    dgemm_tiled
-    dgemm_col4
-    dgemm_colaxpy["dgemm_colaxpy (bit reference)"]
-    dsymm_left
-    dsymm_right
-    dsyrk
-    dsyr2k
-    dtrmm_left
-    dtrmm_right
-    dtrsm_left
-    dtrsm_right
+    gemm["gemm (size dispatch: tile / col4;\nplain colaxpy kept as bit reference)"]
+    symm_left
+    symm_right
+    syrk["syrk / syr2k"]
+    trmm_left["trmm_left / trsm_left"]
+    trmm_right["trmm_right / trsm_right"]
   end
 
   subgraph L2
-    dgemv
-    dgemv_t
-    dger
-    dsymv
-    dtrmv
-    dtrsv
-    dsyr["dsyr / dsyr2"]
+    gemv
+    gemv_t
+    ger["ger · syr · syr2"]
+    symv
+    trmv["trmv / trsv"]
   end
 
   subgraph L1
-    daxpy
-    ddot
-    dscal
-    drotg["drotg (G — scalar)"]
-    dl1rest["dcopy · dswap · drot · dnrm2 · dasum · idamax"]
+    axpy
+    dot
+    scal
+    l1rest["copy · swap · rot · nrm2 · asum · iamax\n(each self-contained)  ·  rotg (scalar)"]
   end
 
   subgraph kernels
-    daxpy4["daxpy4 (+FO)"]
-    daxpy4in["daxpy4in (+FI)"]
-    daxpy_dot["daxpy_dot(4) (FS)"]
-    tile["tile_8x4 / tile_4x4 (RT)"]
+    axpy4["axpy4 (+FO)"]
+    axpy4in["axpy4in (+FI)"]
+    axpy_dot["axpy_dot(4) (FS)"]
+    tile["register tile (RT, private to gemm)"]
   end
 
   lanes["lanes: F64x2 / F32x4"]
 
-  dgemm -->|"A ≤ threshold"| dgemm_tiled
-  dgemm -->|"A > threshold"| dgemm_col4
-  dgemm_tiled --> tile
-  dgemm_tiled -->|tails| dgemv
-  dgemm_col4 --> daxpy4
-  dgemm_col4 -->|tails| dgemv
-  dgemm_colaxpy -->|per column| dgemv
+  gemm --> tile
+  gemm --> axpy4
+  gemm -->|tails| gemv
+  symm_left -->|per column of B| symv
+  symm_right --> axpy4
+  syrk --> axpy4
+  syrk -->|ragged edge + tails| axpy
+  trmm_left -->|lockstep walk| axpy4
+  trmm_left -->|tail columns| trmv
+  trmm_right -->|out-of-group| axpy4
+  trmm_right -->|in-group| axpy
+  trmm_right --> scal
 
-  dsymm_left -->|per column of B| dsymv
-  dsymm_right --> daxpy4
-  dsymm_right -->|tails| daxpy
-  dsyrk --> daxpy4
-  dsyrk -->|ragged edge + tails| daxpy
-  dsyr2k --> daxpy4
-  dsyr2k -->|ragged edge + tails| daxpy
+  gemv -->|4-col groups| axpy4in
+  gemv -->|tails| axpy
+  gemv_t -->|per column| dot
+  ger -->|per column| axpy
+  symv --> axpy_dot
+  trmv -->|common segment| axpy4in
+  trmv -->|tails| axpy
 
-  dtrmm_left -->|lockstep walk| daxpy4
-  dtrmm_left -->|tail columns| dtrmv
-  dtrsm_left -->|lockstep walk| daxpy4
-  dtrsm_left -->|tail columns| dtrsv
-  dtrmm_right -->|out-of-group| daxpy4
-  dtrmm_right -->|in-group| daxpy
-  dtrsm_right -->|out-of-group| daxpy4
-  dtrsm_right -->|in-group| daxpy
-  dtrmm_right --> dscal
-  dtrsm_right --> dscal
-
-  dgemv -->|4-col groups| daxpy4in
-  dgemv -->|tails| daxpy
-  dgemv_t -->|per column| ddot
-  dger -->|per column| daxpy
-  dsymv --> daxpy_dot
-  dtrmv -->|common segment| daxpy4in
-  dtrmv -->|tails| daxpy
-  dtrsv -->|common segment| daxpy4in
-  dtrsv -->|tails| daxpy
-  dsyr -->|per stored segment| daxpy
-
-  daxpy --> lanes
-  ddot --> lanes
-  dscal --> lanes
-  dl1rest --> lanes
-  daxpy4 --> lanes
-  daxpy4in --> lanes
-  daxpy_dot --> lanes
+  axpy --> lanes
+  dot --> lanes
+  scal --> lanes
+  l1rest --> lanes
+  axpy4 --> lanes
+  axpy4in --> lanes
+  axpy_dot --> lanes
   tile --> lanes
 ```
 
-Edge-label codes are the crate README's shorthand (+FO fan-out, +FI
-fan-in, FS fused symv pass, RT register tile). The L1 routines are
-each a self-contained stream over `lanes` — no L1 routine calls
-another; `drotg` is the scalar exception and touches nothing.
+Edge labels are the crate README's shorthand (+FO fan-out, +FI
+fan-in, FS fused symv pass, RT register tile). Grouped nodes share
+their edges: `syrk / syr2k` both stream via axpy4 with ragged edges
+on axpy; `trmm_left / trsm_left` both do the lockstep walk (trsm's
+tails go to trsv); `trmm_right / trsm_right` differ only in trsm's
+reciprocal scal; `ger · syr · syr2` are all plain axpy-per-column;
+symm_right's tail columns use axpy.
 
-Not drawn, by definition: `tile_8x4`/`tile_4x4` live inside
-`dgemm.rs`/`sgemm.rs` (private micro-kernels, listed here because
-they are the one tuned shape not in `kernels.rs`); the shared helpers
-`L2::check_mat` (storage validation, type-free),
-`L2::dscale_y`/`sscale_y` (BLAS β=0 = hard zero-fill), and
-`L3::dsym_at`/`ssym_at` (stored-triangle lookup) are leaf utilities
-used across their levels.
+Not drawn: the shared helpers — `L2::check_mat` (storage validation,
+type-free), `L2::{d,s}scale_y` (BLAS β=0 = hard zero-fill),
+`L3::{d,s}sym_at` (stored-triangle lookup) — are leaf utilities used
+across their levels.
 
 Why composition is load-bearing and not just tidy: when the tuning
-campaign gave `ddot` four accumulators, `dgemv_t` — a loop of ddot
-calls — got 1.3–1.7× faster without being touched (two-draw runner
-verdict, docs step 7). Improvements flow up the arrows.
+campaign gave `dot` four accumulators, `gemv_t` — a loop of dot calls
+— got 1.3–1.7× faster without being touched (two-draw runner verdict,
+docs step 7). Improvements flow up the arrows, in both types at once.
 
 The composition is structural, not sacred: any edge may be replaced
 by a tuned kernel when a race on the reference machines says so (the

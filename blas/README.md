@@ -6,7 +6,8 @@ bulk work onto this crate as it fills in. One file per BLAS routine
 per number type in netlib naming (`daxpy.rs`, `saxpy.rs`, … —
 convention: `src/L1/README.md`), one folder per level; this README is
 the plan of record for the layer. Companion maps: `src/README.md`
-(who calls whom), `tests/README.md` (the measured scoreboard).
+(who calls whom), `bench/README.md` (the measured benchmarks),
+`tests/README.md` (the bit-identical test results).
 
 **Status: the f64 layer is COMPLETE and TUNED — campaign closed
 2026-07-19** (f64, unit stride — callers pass contiguous column
@@ -110,7 +111,7 @@ machine's measured ceiling**: streaming ops against the bandwidth
 ceiling, multiply-class ops against the arithmetic peak — per the
 re-derived success metric, with same-machine interleaved A/B rows and
 the verdict-stability rule throughout. Current results:
-`tests/README.md` (the scoreboard). Market races against faer need
+`bench/README.md` (the scoreboard). Market races against faer need
 faer and stay in `../bench/`.
 
 ## Implementation taxonomy
