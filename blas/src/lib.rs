@@ -7,6 +7,7 @@
 //! `lanes`. Other number types (f32, c64) are the next campaign.
 #![no_std]
 
+pub mod f32;
 mod kernels;
 mod lanes;
 

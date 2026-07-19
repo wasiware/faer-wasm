@@ -18,11 +18,17 @@ const bytes = readFileSync(wasmPath);
 const { instance } = await WebAssembly.instantiate(bytes, {});
 const e = instance.exports;
 
+// --f32 anywhere in argv: score the f32 layer (same recipes, *_f32
+// exports, 4-byte elements; the bandwidth ceiling is bytes-agnostic).
+const F32 = process.argv.includes('--f32');
+const sfx = F32 ? '_f32' : '';
+const EB = F32 ? 4 : 8;
+
 // ---- determinism probes first (cheap, and a failure should kill the run)
 const probeNames = ['dot', 'asum', 'nrm2', 'iamax'];
 const wasmBits = probeNames.map((_, op) => {
 	const buf = new DataView(new ArrayBuffer(8));
-	buf.setFloat64(0, e.run_l1_probe(op));
+	buf.setFloat64(0, e['run_l1_probe' + sfx](op));
 	return buf.getBigUint64(0).toString(16).padStart(16, '0');
 });
 console.log('## determinism probes (LCG len=1001, bits)');
@@ -62,28 +68,28 @@ console.log(`\ntriad bandwidth (same run): ${triadCeil.toFixed(1)} GB/s`);
 
 // op index -> [name, bytes moved per call over the n^2 elements]
 const OPS = [
-	['copy', 16 * N * N],
-	['swap', 32 * N * N],
-	['scal', 16 * N * N],
-	['axpy', 24 * N * N],
-	['rot', 32 * N * N],
-	['dot', 16 * N * N],
-	['nrm2', 8 * N * N],
-	['asum', 8 * N * N],
+	['copy', 2 * EB * N * N],
+	['swap', 4 * EB * N * N],
+	['scal', 2 * EB * N * N],
+	['axpy', 3 * EB * N * N],
+	['rot', 4 * EB * N * N],
+	['dot', 2 * EB * N * N],
+	['nrm2', EB * N * N],
+	['asum', EB * N * N],
 	// iamax reads the input twice (value pass + index rescan) but only
 	// 8n^2 of it is mandatory — the score is deliberately conservative
-	['iamax', 8 * N * N],
+	['iamax', EB * N * N],
 ];
 const rows = [];
 for (let op = 0; op < OPS.length; op++) {
 	const [name, bytesMoved] = OPS[op];
-	let sink = e.run_l1_layer(op); // warm + compile
+	let sink = e['run_l1_layer' + sfx](op); // warm + compile
 	if (!Number.isFinite(sink)) throw new Error(`${name}: non-finite`);
 	let best = Infinity;
 	for (let r = 0; r < 5; r++) {
 		const it = 8;
 		const t0 = performance.now();
-		for (let i = 0; i < it; i++) sink += e.run_l1_layer(op);
+		for (let i = 0; i < it; i++) sink += e['run_l1_layer' + sfx](op);
 		best = Math.min(best, (performance.now() - t0) / it);
 	}
 	if (!Number.isFinite(sink)) throw new Error(`${name}: non-finite`);

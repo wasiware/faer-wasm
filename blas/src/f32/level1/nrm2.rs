@@ -1,6 +1,6 @@
 //! `nrm2` — Euclidean length (ℓ² norm): √(Σxᵢ²).
 //!
-//! Implementation: reduction stream (4 accumulator registers = 8 lanes),
+//! Implementation: reduction stream (4 accumulator registers = 16 lanes),
 //! with a two-pass rescue for over/underflow — the wasm reshaping of
 //! LAPACK's scaled-sum-of-squares guard. Fast path: one streaming
 //! sum-of-squares pass; if the sum is non-finite (overflow) or small
@@ -14,20 +14,20 @@
 //! native ↔ wasm bit-identical by construction. Overflow/underflow
 //! inputs (‖x‖ near 1e±300) are tested explicitly.
 
-use crate::lanes::F64x2;
+use crate::f32::lanes::F32x4;
 
 // Below this, individual squares may have underflowed to subnormals and
 // lost precision: MIN_POSITIVE / EPSILON ≈ 1.002e-292.
-const RESCUE_FLOOR: f64 = f64::MIN_POSITIVE / f64::EPSILON;
+const RESCUE_FLOOR: f32 = f32::MIN_POSITIVE / f32::EPSILON;
 
 /// Returns √(Σxᵢ²), safe against overflow and underflow.
-pub fn nrm2(x: &[f64]) -> f64 {
+pub fn nrm2(x: &[f32]) -> f32 {
 	if x.is_empty() {
 		return 0.0;
 	}
 	let ss = unsafe { sumsq(x.as_ptr(), x.len()) };
 	if ss.is_finite() && ss > RESCUE_FLOOR {
-		return libm::sqrt(ss);
+		return libm::sqrtf(ss);
 	}
 	// rescue: scale by the largest magnitude, then stream again
 	let m = unsafe { maxabs(x.as_ptr(), x.len()) };
@@ -38,30 +38,30 @@ pub fn nrm2(x: &[f64]) -> f64 {
 	if m.is_infinite() {
 		return m;
 	}
-	m * libm::sqrt(unsafe { sumsq_scaled(x.as_ptr(), x.len(), m) })
+	m * libm::sqrtf(unsafe { sumsq_scaled(x.as_ptr(), x.len(), m) })
 }
 
 #[cfg_attr(target_arch = "wasm32", target_feature(enable = "simd128"))]
-unsafe fn sumsq(xp: *const f64, len: usize) -> f64 {
-	let mut acc0 = F64x2::splat(0.0);
-	let mut acc1 = F64x2::splat(0.0);
-	let mut acc2 = F64x2::splat(0.0);
-	let mut acc3 = F64x2::splat(0.0);
+unsafe fn sumsq(xp: *const f32, len: usize) -> f32 {
+	let mut acc0 = F32x4::splat(0.0);
+	let mut acc1 = F32x4::splat(0.0);
+	let mut acc2 = F32x4::splat(0.0);
+	let mut acc3 = F32x4::splat(0.0);
 	let mut i = 0usize;
 	// 4 accumulator registers (tuning lever, 2026-07-19)
-	while i + 8 <= len {
-		let x0 = F64x2::load(xp.add(i));
-		let x1 = F64x2::load(xp.add(i + 2));
-		let x2 = F64x2::load(xp.add(i + 4));
-		let x3 = F64x2::load(xp.add(i + 6));
+	while i + 16 <= len {
+		let x0 = F32x4::load(xp.add(i));
+		let x1 = F32x4::load(xp.add(i + 4));
+		let x2 = F32x4::load(xp.add(i + 8));
+		let x3 = F32x4::load(xp.add(i + 12));
 		acc0 = acc0.add(x0.mul(x0));
 		acc1 = acc1.add(x1.mul(x1));
 		acc2 = acc2.add(x2.mul(x2));
 		acc3 = acc3.add(x3.mul(x3));
-		i += 8;
+		i += 16;
 	}
 	let acc = acc0.add(acc1).add(acc2.add(acc3));
-	let mut s = acc.lane0() + acc.lane1();
+	let mut s = (acc.lane0() + acc.lane1()) + (acc.lane2() + acc.lane3());
 	while i < len {
 		let v = *xp.add(i);
 		s += v * v;
@@ -72,20 +72,20 @@ unsafe fn sumsq(xp: *const f64, len: usize) -> f64 {
 
 /// Σ(xᵢ/m)² — the rescued pass.
 #[cfg_attr(target_arch = "wasm32", target_feature(enable = "simd128"))]
-unsafe fn sumsq_scaled(xp: *const f64, len: usize, m: f64) -> f64 {
-	let vm = F64x2::splat(m);
-	let mut acc0 = F64x2::splat(0.0);
-	let mut acc1 = F64x2::splat(0.0);
+unsafe fn sumsq_scaled(xp: *const f32, len: usize, m: f32) -> f32 {
+	let vm = F32x4::splat(m);
+	let mut acc0 = F32x4::splat(0.0);
+	let mut acc1 = F32x4::splat(0.0);
 	let mut i = 0usize;
-	while i + 4 <= len {
-		let x0 = F64x2::load(xp.add(i)).div(vm);
-		let x1 = F64x2::load(xp.add(i + 2)).div(vm);
+	while i + 8 <= len {
+		let x0 = F32x4::load(xp.add(i)).div(vm);
+		let x1 = F32x4::load(xp.add(i + 4)).div(vm);
 		acc0 = acc0.add(x0.mul(x0));
 		acc1 = acc1.add(x1.mul(x1));
-		i += 4;
+		i += 8;
 	}
 	let acc = acc0.add(acc1);
-	let mut s = acc.lane0() + acc.lane1();
+	let mut s = (acc.lane0() + acc.lane1()) + (acc.lane2() + acc.lane3());
 	while i < len {
 		let v = *xp.add(i) / m;
 		s += v * v;
@@ -96,17 +96,17 @@ unsafe fn sumsq_scaled(xp: *const f64, len: usize, m: f64) -> f64 {
 
 /// The branch-free max-|xᵢ| value pass (iamax's vector pass).
 #[cfg_attr(target_arch = "wasm32", target_feature(enable = "simd128"))]
-unsafe fn maxabs(xp: *const f64, len: usize) -> f64 {
-	let mut m0 = F64x2::splat(-1.0);
-	let mut m1 = F64x2::splat(-1.0);
+unsafe fn maxabs(xp: *const f32, len: usize) -> f32 {
+	let mut m0 = F32x4::splat(-1.0);
+	let mut m1 = F32x4::splat(-1.0);
 	let mut i = 0usize;
-	while i + 4 <= len {
-		m0 = m0.pmax(F64x2::load(xp.add(i)).abs());
-		m1 = m1.pmax(F64x2::load(xp.add(i + 2)).abs());
-		i += 4;
+	while i + 8 <= len {
+		m0 = m0.pmax(F32x4::load(xp.add(i)).abs());
+		m1 = m1.pmax(F32x4::load(xp.add(i + 4)).abs());
+		i += 8;
 	}
 	let m = m0.pmax(m1);
-	let mut best = m.lane0().max(m.lane1());
+	let mut best = m.lane0().max(m.lane1()).max(m.lane2()).max(m.lane3());
 	while i < len {
 		best = best.max((*xp.add(i)).abs());
 		i += 1;

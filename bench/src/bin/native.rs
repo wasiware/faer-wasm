@@ -45,6 +45,25 @@ fn main() {
         }
         return;
     }
+    // f32 twins of the three bits modes.
+    if label == "l1-bits-f32" {
+        for op in 0..4usize {
+            println!("{:016x}", bench_harness::run_l1_probe_f32(op).to_bits());
+        }
+        return;
+    }
+    if label == "l2-bits-f32" {
+        for op in 0..8usize {
+            println!("{:016x}", bench_harness::run_l2_probe_f32(op).to_bits());
+        }
+        return;
+    }
+    if label == "l3-bits-f32" {
+        for op in 0..9usize {
+            println!("{:016x}", bench_harness::run_l3_probe_f32(op).to_bits());
+        }
+        return;
+    }
     let ops: &[(&str, usize, extern "C" fn() -> f64)] = &[
         ("matmul", 256, bench_harness::run_matmul),
         ("lu_solve", 256, bench_harness::run_lu_solve),

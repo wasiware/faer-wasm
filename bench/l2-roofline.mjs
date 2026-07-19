@@ -18,11 +18,17 @@ const bytes = readFileSync(wasmPath);
 const { instance } = await WebAssembly.instantiate(bytes, {});
 const e = instance.exports;
 
+// --f32 anywhere in argv: score the f32 layer (same recipes, *_f32
+// exports, 4-byte elements; the bandwidth ceiling is bytes-agnostic).
+const F32 = process.argv.includes('--f32');
+const sfx = F32 ? '_f32' : '';
+const EB = F32 ? 4 : 8;
+
 // ---- determinism probes first
 const probeNames = ['gemv', 'gemv_t', 'ger', 'symv', 'trmv', 'trsv', 'syr', 'syr2'];
 const wasmBits = probeNames.map((_, op) => {
 	const buf = new DataView(new ArrayBuffer(8));
-	buf.setFloat64(0, e.run_l2_probe(op));
+	buf.setFloat64(0, e['run_l2_probe' + sfx](op));
 	return buf.getBigUint64(0).toString(16).padStart(16, '0');
 });
 console.log('## L2 determinism probes (LCG 257x257, bits)');
@@ -49,25 +55,25 @@ e.setup(N);
 // gemv/gemv_t read all of A (8n²); symmetric/triangular ops touch half
 // the matrix (4n² read; +4n² write-back for the rank updates).
 const OPS = [
-	['gemv', 8 * N * N],
-	['gemv_t', 8 * N * N],
-	['ger', 16 * N * N],
-	['symv', 4 * N * N],
-	['trmv', 4 * N * N],
-	['trsv', 4 * N * N],
-	['syr', 8 * N * N],
-	['syr2', 8 * N * N],
+	['gemv', EB * N * N],
+	['gemv_t', EB * N * N],
+	['ger', 2 * EB * N * N],
+	['symv', (EB / 2) * N * N],
+	['trmv', (EB / 2) * N * N],
+	['trsv', (EB / 2) * N * N],
+	['syr', EB * N * N],
+	['syr2', EB * N * N],
 ];
 const rows = [];
 for (let op = 0; op < OPS.length; op++) {
 	const [name, bytesMoved] = OPS[op];
-	let sink = e.run_l2_layer(op); // warm + compile
+	let sink = e['run_l2_layer' + sfx](op); // warm + compile
 	if (!Number.isFinite(sink)) throw new Error(`${name}: non-finite`);
 	let best = Infinity;
 	for (let r = 0; r < 5; r++) {
 		const it = 8;
 		const t0 = performance.now();
-		for (let i = 0; i < it; i++) sink += e.run_l2_layer(op);
+		for (let i = 0; i < it; i++) sink += e['run_l2_layer' + sfx](op);
 		best = Math.min(best, (performance.now() - t0) / it);
 	}
 	if (!Number.isFinite(sink)) throw new Error(`${name}: non-finite`);

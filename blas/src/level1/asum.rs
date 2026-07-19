@@ -1,6 +1,6 @@
 //! `asum` — sum of absolute values (ℓ¹ norm): Σ|xᵢ|.
 //!
-//! Implementation: reduction stream (2 accumulator registers = 4 lanes,
+//! Implementation: reduction stream (4 accumulator registers = 8 lanes,
 //! `abs` in-lane, folded in a fixed order at the end). Ported from the
 //! raced variant — 3.5–4× faster than the plain loop on all three
 //! runner draws (docs/blas-ab-2026-07.md, step 2): the plain loop's

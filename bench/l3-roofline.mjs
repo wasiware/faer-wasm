@@ -17,6 +17,12 @@ const bytes = readFileSync(wasmPath);
 const { instance } = await WebAssembly.instantiate(bytes, {});
 const e = instance.exports;
 
+// --f32 anywhere in argv: score the f32 layer (same recipes, *_f32
+// exports, 4-byte elements; the bandwidth ceiling is bytes-agnostic).
+const F32 = process.argv.includes('--f32');
+const sfx = F32 ? '_f32' : '';
+const EB = F32 ? 4 : 8;
+
 // ---- determinism probes first
 const probeNames = [
 	'gemm',
@@ -31,7 +37,7 @@ const probeNames = [
 ];
 const wasmBits = probeNames.map((_, op) => {
 	const buf = new DataView(new ArrayBuffer(8));
-	buf.setFloat64(0, e.run_l3_probe(op));
+	buf.setFloat64(0, e['run_l3_probe' + sfx](op));
 	return buf.getBigUint64(0).toString(16).padStart(16, '0');
 });
 console.log('## L3 determinism probes (LCG 65x65, bits)');
@@ -53,13 +59,14 @@ if (bitsFile) {
 // ---- arithmetic ceiling (register-resident, same run)
 e.setup(64); // any state works for the flops probe
 {
-	e.run_ceiling_flops(1000); // compile warm
+	e['run_ceiling_flops' + sfx](1000); // compile warm
 }
+const LANES = F32 ? 4 : 2;
 const flopsOnce = (iters) => {
 	const t0 = performance.now();
-	const s = e.run_ceiling_flops(iters);
+	const s = e['run_ceiling_flops' + sfx](iters);
 	if (!Number.isFinite(s)) throw new Error('flops probe non-finite');
-	return (iters * 8 * 2 * 2) / ((performance.now() - t0) / 1e3) / 1e9;
+	return (iters * 8 * LANES * 2) / ((performance.now() - t0) / 1e3) / 1e9;
 };
 const peak = Math.max(flopsOnce(2_000_000), flopsOnce(2_000_000), flopsOnce(2_000_000));
 console.log(`\narithmetic peak (register-resident, same run): ${peak.toFixed(1)} GFLOP/s`);
@@ -83,13 +90,13 @@ console.log(`\n| op | ms/call | GFLOP/s | % of peak |`);
 console.log('| - | -: | -: | -: |');
 for (let op = 0; op < OPS.length; op++) {
 	const [name, flops] = OPS[op];
-	let sink = e.run_l3_layer(op); // warm + compile
+	let sink = e['run_l3_layer' + sfx](op); // warm + compile
 	if (!Number.isFinite(sink)) throw new Error(`${name}: non-finite`);
 	let best = Infinity;
 	for (let r = 0; r < 4; r++) {
 		const it = 2;
 		const t0 = performance.now();
-		for (let i = 0; i < it; i++) sink += e.run_l3_layer(op);
+		for (let i = 0; i < it; i++) sink += e['run_l3_layer' + sfx](op);
 		best = Math.min(best, (performance.now() - t0) / it);
 	}
 	if (!Number.isFinite(sink)) throw new Error(`${name}: non-finite`);
