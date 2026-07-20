@@ -17,8 +17,9 @@ Hermitian). Companion maps: `src/README.md` (who calls whom),
 `bench/README.md` (the measured benchmarks), `tests/README.md` (the
 bit-identical test results).
 
-**Status — all four type layers are BUILT; f64 TUNED (campaign
-closed 2026-07-19); complex tuning levers recorded.** Unit stride
+**Status — all four type layers are BUILT and TUNED (f64 campaign
+closed 2026-07-19; packed-gemm race across all four types
+2026-07-20).** Unit stride
 throughout — callers pass contiguous column slices (strided access
 defeats streaming and no consumer wants it). One-line history, full
 plain-English record in `../STATUS.md`, evidence per step in
@@ -52,6 +53,17 @@ plain-English record in `../STATUS.md`, evidence per step in
   size. The hemv grouping LOST for c32 (~2%, both draws — refuted,
   recorded in `src/L2/chemv.rs`); chemv keeps the single-column
   pass.
+- **packed-panel gemm, all four types** (raced + routed 2026-07-20,
+  docs step 14): BLIS/Goto packing around the existing microkernel
+  math, bit-identical to the colaxpy references. Two runner draws,
+  routed strictly at measured wins: dgemm 1.24–1.44× above the tiled
+  threshold (unanimous, square AND deep-K prefill shapes); sgemm
+  +3–5% above its tiled threshold; zgemm 1.08–1.33× at A ≥ 1 MB
+  (every measured size — this ships the complex register tile
+  previously recorded as a non-starter); cgemm +12% at A ≥ 8 MB
+  only. col4 stays everywhere as the raced reference. Packing pays
+  where memory traffic binds: the win shrinks f64 → c32 as
+  arithmetic density rises.
 
 Sequencing (Andy, 2026-07-18, revised same day; ROADMAP "BLAS
 campaign sequencing"): f64 tuned first — DONE; the tuned layer
@@ -62,13 +74,15 @@ unblocked.
 
 Gaps: FMA variants deferred (above); transpose forms of
 gemm/trmv/trsv/trmm/trsm not built (no consumer yet, any type);
-remaining recorded-not-raced levers — register-tile zgemm/cgemm (a
-design, and gemm already runs 74–94% of peak in complex, so the
-headroom is thin) and the i*amax rescans (worst: isamax 8%); the
-complex-symmetric symm/syrk/syr2k forms and the complex-s rotation
-apply (`zrot`) not built (no consumer); the `cd blas && cargo test`
-CI gate line still needs adding to the workflow (session tokens
-can't edit workflow files).
+remaining recorded-not-raced levers — the i*amax rescans (worst:
+isamax 8%), packed-gemm tuning constants (KC/MC first guesses, not
+swept) and the unmeasured dispatch gaps (f64 below 256³ vs tiled,
+c32 between 2 and 8 MB of A); the register-tile zgemm/cgemm lever
+RESOLVED by the packed race (step 14 — packed form ships, unpacked
+form confirmed unnecessary); the complex-symmetric symm/syrk/syr2k
+forms and the complex-s rotation apply (`zrot`) not built (no
+consumer); the `cd blas && cargo test` CI gate line still needs
+adding to the workflow (session tokens can't edit workflow files).
 
 Hard-won build rule: simd128 is NOT in rustc's default wasm32 feature
 set — every SIMD path must sit under `#[target_feature(enable =
@@ -217,17 +231,20 @@ to 2× is a recorded complex tuning lever.
 
 | BLAS | mathematical name | f64 | f32 | c64 | c32 |
 |---|---|---|---|---|---|
-| `gemm` | matrix multiplication | CA+RT/FO | CA+RT/FO | CA+FO ¹¹ | CA+FO ¹¹ |
+| `gemm` | matrix multiplication | CA+RT/FO ¹¹ | CA+RT/FO ¹¹ | CA+FO/RT ¹¹ | CA+FO/RT ¹¹ |
 | `syrk` | Gram-matrix update (αAAᵀ + βC) | CA+FO | CA+FO | CA+FO ¹² | CA+FO ¹² |
 | `trmm` | triangular matrix multiplication | CA+FO | CA+FO | CA+FO | CA+FO |
 | `symm` / `syr2k` | symmetric multiply / rank-2k update | CA+FO ¹ | CA+FO ¹ | CA+FO ¹ | CA+FO ¹ |
 | `trsm` | triangular solve, many right-hand sides | DCA+FO | DCA+FO | DCA+FO | DCA+FO |
 
 ¹ left-side symm/hemm is FS per column of B.
-¹¹ no register tile for the complex types yet — a complex tile is a
-different register geometry, a recorded tuning lever, not a
-mechanical port; `zgemm`/`cgemm` route everything through the col4
-fan-out with the `_colaxpy` reference kept bit-checked.
+¹¹ gemm is size-dispatched in every type since the packed-panel race
+(2026-07-20, docs step 14): d/s run the register tile small, the
+BLIS-style packed-panel shape (`*gemm_packed`) large; z/c run the
+col4 fan-out small and a packed-panel COMPLEX register tile large
+(2×4 c64, 4×4 c32 — the geometry recorded as a non-starter unpacked;
+packing removed the strided k-walk that made it one). All shapes
+bit-identical to the `_colaxpy` reference, which stays bit-checked.
 ¹² the Hermitian `herk`/`her2k` take real α (herk) / real β per the
 reference signatures, and maintain the Hermitian invariant: stored
 diagonals end exactly real.
