@@ -620,6 +620,10 @@ pub extern "C" fn run_ceiling_flops(iters: usize) -> f64 {
 
 #[cfg(target_arch = "wasm32")]
 #[target_feature(enable = "simd128")]
+// index loops kept verbatim (clippy suggests iterators): this probe is a
+// calibrated instrument — its measured ceilings are published — so no
+// cosmetic reshaping of its codegen.
+#[allow(clippy::needless_range_loop)]
 unsafe fn ceiling_flops_imp(iters: usize) -> f64 {
     use core::arch::wasm32::*;
     let m = f64x2_splat(1.000000001);
@@ -974,6 +978,8 @@ pub extern "C" fn run_ceiling_flops_f32(iters: usize) -> f64 {
 
 #[cfg(target_arch = "wasm32")]
 #[target_feature(enable = "simd128")]
+// same calibrated-instrument rule as ceiling_flops_imp
+#[allow(clippy::needless_range_loop)]
 unsafe fn ceiling_flops_f32_imp(iters: usize) -> f64 {
     use core::arch::wasm32::*;
     let m = f32x4_splat(1.0000001);

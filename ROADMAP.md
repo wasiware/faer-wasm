@@ -101,8 +101,9 @@ clones inherit tuned shapes for free instead of re-tuning ×3):
    headroom at 74–94% of peak), i*amax rescans;
    Packed-gemm campaign (2026-07-20, Andy: "we should at least try
    it. Same for all 4 types" — docs step 14): an off-record sandbox
-   probe vs Burn's ndarray backend showed matrixmultiply's
-   packed-panel gemm beating our col4 ~2× at deep-K prefill shapes.
+   probe (architect-directed, kept out of the docs by agreement)
+   showed a packed-panel competitor beating our col4 ~2× at deep-K
+   prefill shapes.
    Built `*gemm_packed` in all four types (BLIS/Goto packing around
    our microkernels; the complex versions ARE the register-tile
    lever, un-shelved — packing removes the strided k-walk that
