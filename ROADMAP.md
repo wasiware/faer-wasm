@@ -99,6 +99,23 @@ clones inherit tuned shapes for free instead of re-tuning ×3):
    both draws; tie at 128), cgemm 3.11–3.67× unanimous. Remaining
    levers recorded, not chased: complex register tiles (thin
    headroom at 74–94% of peak), i*amax rescans;
+   Packed-gemm campaign (2026-07-20, Andy: "we should at least try
+   it. Same for all 4 types" — docs step 14): an off-record sandbox
+   probe (architect-directed, kept out of the docs by agreement)
+   showed a packed-panel competitor beating our col4 ~2× at deep-K
+   prefill shapes.
+   Built `*gemm_packed` in all four types (BLIS/Goto packing around
+   our microkernels; the complex versions ARE the register-tile
+   lever, un-shelved — packing removes the strided k-walk that
+   refuted it), bit-identical to colaxpy (replay tests + wasm fold
+   identity both draws). Raced on two runner draws, routed at
+   measured wins only: dgemm 1.24–1.44× (packed replaces col4 above
+   the tiled threshold), sgemm +3–5% (same, above 3 MB), zgemm
+   1.08–1.33× (packed at A ≥ 1 MB — every measured size won), cgemm
+   +12% at 1024³ only (packed at A ≥ 8 MB). Observed gradient:
+   packing pays in proportion to memory-boundedness (f64 most, c32
+   least). New recorded levers: KC/MC constants unswept; unmeasured
+   dispatch gaps (f64 tiled-vs-packed below 256³, c32 2–8 MB);
 4. **only then** does any LAPACK-layer work resume (the kernel
    re-route onto the layer included) — UNBLOCKED as of 2026-07-19:
    all four number types are built, tested, probed, and

@@ -25,7 +25,7 @@ forms them).
 | rotg | defining identities + reference edge cases + subnormal smoke |
 | gemv, ger, syr, syr2, trmv, trsv | **bit-for-bit same-order scalar replay** + independent bounds (trsv also residual-verified) |
 | symv | error-bounded (the fused pass legitimately re-folds its reduction) |
-| gemm, syrk, syr2k | **bit-for-bit replay** + bounds; gemm's three shapes (colaxpy / tile / col4) cross-checked bit-identical, so the size dispatch is invisible |
+| gemm, syrk, syr2k | **bit-for-bit replay** + bounds; gemm's four shapes (colaxpy / tile / col4 / packed) cross-checked bit-identical — the packed replay crosses the KC/MC/MR block boundaries and a dispatch-zone replay routes above the packed threshold — so the size dispatch is invisible |
 | symm | left: bounds (rides symv); right: **bit-for-bit replay** |
 | trmm, trsm | **bit-for-bit replay** both sides + bounds/residuals — the two elimination-order reorders (trmm_right-upper, trsm_right-lower) are documented in their files and the replays mirror them; the other triangles replay the PLAIN order, proving the blocked shapes bit-identical to it |
 | zaxpy, zscal, zdscal, zcopy, zswap, zdrot | **bit-for-bit** vs the scalar `C64` definition (the SIMD product form is a bit-exact rewrite of it) |
@@ -36,7 +36,7 @@ forms them).
 | zgemv, zgeru, zgerc, ztrmv, ztrsv | **bit-for-bit same-order replay** (+ bounds; ztrsv residual-verified; `zgerc == zgeru(conj y)` and `zgemv_c == zgemv_t(conj A)` bitwise) |
 | zhemv | error-bounded (fused pass re-folds its reduction); stored diagonal imag poisoned to prove it is ignored |
 | zher, zher2 | **bit-for-bit replay** + diagonal ends exactly real (+0.0 imag, the Hermitian invariant) |
-| zgemm | **bit-for-bit replay** + bounds; col4 vs colaxpy cross-checked bit-identical |
+| zgemm | **bit-for-bit replay** + bounds; col4 AND packed (the complex register tile) vs colaxpy cross-checked bit-identical, plus the dispatch-zone replay |
 | zhemm | left: bounds (rides zhemv); right: **bit-for-bit replay** through the conjugating triangle lookup |
 | zherk, zher2k | **bit-for-bit replay** incl. the real-β component scale and the exactly-real diagonals |
 | ztrmm, ztrsm | **bit-for-bit replay** both sides — same reorder disclosures as the real twins, replays mirror them; residuals for ztrsm |

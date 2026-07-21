@@ -78,36 +78,54 @@ arithmetic; a complex multiply-add counts 8 real FLOPs).
 
 | routine | f64 | f32 | c64 | c32 |
 |---|---|---|---|---|
-| gemm | 53–56% | 55–57% | 74–79% | 85% |
-| symm_left (complex: hemm_left) | 84–86% | 79–82% | 54–61% ² | 55–56% |
-| syrk (complex: herk) | 49–52% | 50–52% | 76–81% | 76–77% |
-| syr2k (complex: her2k) | 49–51% | 48–51% | 74–78% | 75% |
-| trmm_left | 46–48% | 50% | 81–86% | 76% |
-| trsm_left | 46–48% | 50–52% | 78–85% | 76–77% |
-| trmm_right | 53–55% | 54–58% | 77–85% | 86% |
-| trsm_right | 53–55% | 54–57% | 77–85% | 86–87% |
+| gemm | 55–56% ³ | 56–57% | 88–94% ³ | 86–89% |
+| symm_left (complex: hemm_left) | 81–84% | 74–77% | 59–68% ² | 53–62% |
+| syrk (complex: herk) | 38–42% | 48–49% | 66–68% | 78–82% |
+| syr2k (complex: her2k) | 38–42% | 47% | 67–68% | 76–81% |
+| trmm_left | 46–50% | 44–46% | 72–75% | 77–78% |
+| trsm_left | 47–50% | 46–47% | 72–75% | 78% |
+| trmm_right | 47–48% | 55% | 69–76% | 87–89% |
+| trsm_right | 47–48% | 54–55% | 69–76% | 88–89% |
 
 ² refreshed after the zhemv grouping shipped (runs
 29705911344/29705909050) — hemm_left rides zhemv and moved from
 39–41% to 54–61%.
+³ refreshed after the packed-gemm dispatch shipped (runs
+29721461249/29721465793; docs step 14; whole table re-drawn on that
+pair). At n=512 the dispatch routes packed for f64 (53–56% → 55–56%
+against a same-run peak; the bigger packed wins are at 1024³ and
+deep-K, above this table's size) and for c64 (74–79% → 88–94% — the
+packed complex register tile). f32/c32 route their pre-packed shapes
+at 512 (their packed zones start higher); their row movement here —
+and every non-gemm row's — is draw variance, not a code change: this
+pair measured higher arithmetic ceilings than the earlier pairs
+(f64 15.2/17.0 vs 13.3–15.3 GFLOP/s), which deflates unchanged rows'
+percentages (e.g. f64 syrk 49–52% → 38–42% at near-identical
+absolute GFLOP/s). Same-run-relative numbers move with the ceiling
+draw; absolute ms/call in the run logs is the stable cross-check.
 
 The complex families sit far closer to the arithmetic ceiling than
-the real layers (74–87% vs 46–56%) — complex arithmetic does 4× the
+the real layers (~66–94% vs 38–57% outside the symm/hemm rows) —
+complex arithmetic does 4× the
 FLOPs per byte moved, so the same fan-out shapes shift from
-memory-limited toward compute-bound, and gemm gets there without a
-register tile in either type (cgemm's 85% of the ~30.5 GFLOP/s f32
-peak ≈ 25.9 GFLOP/s is the fastest absolute row on the board). The
-remaining below-family rows are the hemm_lefts, riding their hemv
-kernels (see the Level-2 note).
+memory-limited toward compute-bound. zgemm at 88–94% of peak (packed
+tile) and cgemm at 86–89% (col4 fan-out, ~26–30 GFLOP/s — the
+fastest absolute rows on the board) are effectively at the ceiling.
+The remaining below-family rows are the hemm_lefts, riding their
+hemv kernels (see the Level-2 note).
 
 Market comparison (not the metric): the layer's gemm beats faer's
 blocked gemm in every type raced, two draws each. dgemm 1.25–1.8× at
-every measured size (docs step 6, `../../bench/gemm-tune-ab.mjs`);
-zgemm 1.49–1.71× at n=256–768 on both draws (n=128 split across
-draws: 1.70×/0.96× — call it a tie at the smallest size); cgemm
-3.11–3.67× at every size including 128, unanimous (docs step 13,
-`../../bench/cplx-gemm-ab.mjs` — conservative against us: the blas
-rows do the full αAB+βC blend where faer's row is a plain replace).
+every measured size (docs step 6, `../../bench/gemm-tune-ab.mjs` —
+pre-packed; packed adds 1.24–1.44× on top at 512³+); zgemm
+1.49–1.71× at n=256–768 on both draws (n=128 split across draws:
+1.70×/0.96× — call it a tie at the smallest size; packed adds
+1.08–1.33× on top); cgemm 3.11–3.67× at every size including 128,
+unanimous (docs step 13, `../../bench/cplx-gemm-ab.mjs` —
+conservative against us: the blas rows do the full αAB+βC blend
+where faer's row is a plain replace). The packed-vs-incumbent race
+itself: `packed-gemm-ab.mjs`, runs 29720778259/29720782633, full
+tables in docs step 14.
 
 ## Running a roofline (per level, per type)
 

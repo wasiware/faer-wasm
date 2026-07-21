@@ -153,7 +153,9 @@ The names are netlib's; the signatures are ours (documented per file):
   (real c, complex s, complex r).
 - **Tuned-variant exports.** Where a routine ships raced alternates,
   they carry a suffix: `dgemm_colaxpy` (the plain reference shape),
-  `dgemm_tiled`, `dgemm_col4` — `dgemm` itself is the size dispatcher.
+  `dgemm_tiled`, `dgemm_col4`, `dgemm_packed` — `dgemm` itself is the
+  size dispatcher. Every type carries a `*gemm_packed` shape since the
+  2026-07-20 race; in z/c it is the packed complex register tile.
 
 Everything else about a routine — what it computes, its rounding
 contract, which tuned loop shape it ships and why — lives in its own

@@ -5,7 +5,7 @@ what do we ship, and how good is it?** Updated at the end of every
 working session. Details and evidence live in `docs/` and the README
 evidence grid; this page is the summary you can hold in your head.
 
-Last updated: 2026-07-19.
+Last updated: 2026-07-20.
 
 ## 1. What we changed in faer itself
 
@@ -88,6 +88,24 @@ re-derivation of the project goals. The decisions, in plain terms:
   and the layer has its home: the `blas/` crate — one folder per
   BLAS level, one file per routine per number type in classic BLAS
   naming (daxpy/saxpy/…), the plan tables in its README.
+- **Packed matrix-multiply shipped, all four number types**
+  (2026-07-20, Andy: "we should at least try it"): a probe against a
+  competing library showed its matrix multiply beating ours ~2× on
+  the tall-thin shapes LLM inference uses, by pre-copying blocks of
+  the inputs into cache-friendly "packed" layouts — the one standard
+  technique our layer didn't have. We built the packed shape for all
+  four number types (for the complex types this also delivered the
+  register-tile design previously shelved as not-worth-it — packing
+  is what makes it work), proved it produces bit-for-bit identical
+  results to the shipped code, and raced it on the CI machines: big
+  unanimous wins for double precision (1.24–1.44× at large sizes,
+  1.1–1.23× on the LLM-style shapes), solid wins for complex-double
+  (1.08–1.33× everywhere measured), modest wins at the largest sizes
+  only for the two single-precision types. Routed in exactly where it
+  measured faster; everything else keeps the old code. The speed
+  scoreboard was re-drawn on the new code the same day (two more CI
+  draws): complex-double matrix multiply now runs at 88–94% of the
+  machine's arithmetic limit — effectively at the ceiling.
 - **BLAS close-out done** (2026-07-19, Andy's checklist): code and
   documentation swept (a dead field in the benchmark harness, stale
   "two types" comments from a campaign ago, wrong cross-references —

@@ -72,6 +72,12 @@ evidence log: docs/blas-ab-2026-07.md steps 1–6. Scoreboard: STATUS §3.
   run_l3_layer(0..7: gemm,symm_l,syrk,syr2k,trmm_l,trsm_l,trmm_r,
   trsm_r), run_l3_tuned_gemm (tiled), run_l3_col4_gemm, probes as
   above, run_ceiling_bw (pure triad v2), run_ceiling_flops(iters).
+  Packed-gemm race rows (all four types, one pair of exports):
+  run_gemm_rect_{incumbent,packed}(ty 0..3 = f64/f32/c64/c32, m, k,
+  n) over the square state's buffers reinterpreted as contiguous
+  panels — needs setup(N) with m·k, k·n, m·n ≤ N²; race script
+  blas/bench/packed-gemm-ab.mjs (interleaved, asserts fold
+  bit-identity before timing).
   c64 twins (state az/bz/symz/triz/rhsz): run_l1_layer_z(0..10:
   copy,swap,scal,dscal,axpy,rot,dotu,dotc,nrm2,asum,iamax),
   run_l2_layer_z(0..9: gemv,gemv_t,gemv_c,geru,gerc,hemv,trmv,trsv,
